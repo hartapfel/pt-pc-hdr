@@ -102,15 +102,12 @@ inline float ResolveHdrPeak(float setting, float display) {
     return std::isfinite(chosen) ? std::clamp(chosen, float(kHdrPeakMin), float(kHdrPeakMax)) : float(kHdrPeakFallback);
 }
 
-constexpr float kHdrSourceWhite = 3.0f;
 inline float HdrShoulder(float m, float ratio) {
-    if (m <= 1.0f || ratio <= 1.001f) return std::min(m, 1.0f);
-    const float width = std::min(kHdrSourceWhite - 1.0f, 2.97f * (ratio - 1.0f));
-    if (m >= 1.0f + width) return ratio;
-    const float t = (m - 1.0f) / width;
-    const float t2 = t * t;
-    const float t3 = t2 * t;
-    return (1.0f - 3.0f * t2 + 2.0f * t3) + (t - 2.0f * t2 + t3) * width + (3.0f * t2 - 2.0f * t3) * ratio;
+    const float knee = std::min(1.0f, .8f * ratio);
+    if (m <= knee) return m;
+    const float headroom = ratio - knee;
+    const float excess = m - knee;
+    return knee + headroom * (excess / (excess + headroom));
 }
 
 inline uint8_t LinearToSrgb8(float linear) {

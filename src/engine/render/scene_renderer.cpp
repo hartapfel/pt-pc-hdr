@@ -1,3 +1,4 @@
+#include "engine/render/exposure_math.h"
 #include "engine/render/scene_renderer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -20,16 +21,16 @@
 namespace pt {
 namespace {
 
-constexpr gpu::Format kAlbedoFormat = gpu::Format::R8G8B8A8Unorm;
+constexpr gpu::Format kAlbedoFormat = gpu::Format::R16G16B16A16Sfloat;
 constexpr gpu::Format kNormalFormat = gpu::Format::R16G16B16A16Sfloat;
-constexpr gpu::Format kMaterialFormat = gpu::Format::R8G8B8A8Unorm;
+constexpr gpu::Format kMaterialFormat = gpu::Format::R16G16B16A16Sfloat;
 constexpr gpu::Format kDepthFormat = SceneRenderer::kDepthTargetFormat;
 constexpr gpu::Format kLightFormat = gpu::Format::R16G16B16A16Sfloat;
 constexpr gpu::Format kHdrFormat = SceneRenderer::kHdrTargetFormat;
 constexpr gpu::Format kAoFormat = gpu::Format::R8Unorm;
 constexpr gpu::Format kRefMapFormat = gpu::Format::R16G16B16A16Sfloat;
 constexpr gpu::Format kPostFormat = SceneRenderer::kPostTargetFormat;
-constexpr gpu::Format kBloomFormat = gpu::Format::R8G8B8A8Srgb;
+constexpr gpu::Format kBloomFormat = gpu::Format::R16G16B16A16Sfloat;
 constexpr uint32_t kShadowAtlasSize = SceneRenderer::kShadowAtlasSize;
 
 const char* const kDebugViewNames =
@@ -114,7 +115,9 @@ bool SceneRenderer::EnsureShadowTarget() {
 
 bool SceneRenderer::Init(Renderer& renderer, TextureManager& textures) {
     renderer_ = &renderer;
-    ldr_format_ = gpu::Format::R8G8B8A8Unorm;
+    // Keep the extended, sRGB-shaped scene through every post-processing pass.
+    // Use a stable format across SDR/HDR toggles so pipelines stay compatible.
+    ldr_format_ = kPostTargetFormat;
     textures_ = &textures;
     gpu_ = &renderer.Gpu();
 
@@ -426,9 +429,6 @@ bool SceneRenderer::CreatePipelines() {
     post.colors = {ldr_format_};
     post.fragment = "tonemap.frag";
     tonemap_ = gpu_->CreateGraphicsPipeline(post);
-    post.colors = {Renderer::kHdrBoostFormat};
-    post.fragment = "hdr_boost.frag";
-    hdr_boost_pipeline_ = gpu_->CreateGraphicsPipeline(post);
     post.colors = {ldr_format_};
     post.fragment = "fxaa.frag";
     fxaa_ = gpu_->CreateGraphicsPipeline(post);
@@ -510,7 +510,7 @@ bool SceneRenderer::CreatePipelines() {
     vfx_depth_down_ = gpu_->CreateGraphicsPipeline(post);
 
     const gpu::PipelineHandle all[] = {gbuffer_, decal_, shadow_pipeline_, probe_, probe_resolve_, light_, compose_, forward_, forward_emissive_, luminance_, bright_,
-                              reflect_colour_, kawase_, bloom_add_, kawase_sum_, gaussian_, tonemap_, hdr_boost_pipeline_, fxaa_, dof_ratio_, dof_down_, dof_blur_, dof_blend_, mb_velocity_,
+                              reflect_colour_, kawase_, bloom_add_, kawase_sum_, gaussian_, tonemap_, fxaa_, dof_ratio_, dof_down_, dof_blur_, dof_blend_, mb_velocity_,
                               mb_tile_pipeline_, mb_bake_pipeline_, mb_mcguire_, mb_composite_, mb_decode_, velocity_pipeline_, fsblur_, banding_, screen_fx_,
                               debug_, occlusion_, occlusion_blur_, reflect_make_, reflect_blend_, vfx_composite_, vfx_depth_down_, mirror_temporal_pipeline_,
                               reflect_layer_pipeline_, reflect_temporal_pipeline_, subliminal_string_, backdrop_, date_resolve_, date_resolve_out_};
@@ -526,7 +526,7 @@ bool SceneRenderer::CreatePipelines() {
 
 void SceneRenderer::DestroyPipelines() {
     gpu::PipelineHandle* all[] = {&gbuffer_, &decal_, &shadow_pipeline_, &probe_, &probe_resolve_, &light_, &compose_, &forward_, &forward_emissive_, &luminance_, &bright_,
-                         &reflect_colour_, &kawase_, &bloom_add_, &kawase_sum_, &gaussian_, &tonemap_, &hdr_boost_pipeline_, &fxaa_, &dof_ratio_, &dof_down_, &dof_blur_, &dof_blend_,
+                         &reflect_colour_, &kawase_, &bloom_add_, &kawase_sum_, &gaussian_, &tonemap_, &fxaa_, &dof_ratio_, &dof_down_, &dof_blur_, &dof_blend_,
                          &mb_velocity_, &mb_tile_pipeline_, &mb_bake_pipeline_, &mb_mcguire_, &mb_composite_, &mb_decode_, &velocity_pipeline_, &fsblur_,
                          &banding_, &screen_fx_, &debug_, &occlusion_, &occlusion_blur_, &reflect_make_, &reflect_blend_, &vfx_composite_, &vfx_depth_down_,
                          &mirror_temporal_pipeline_, &reflect_layer_pipeline_, &reflect_temporal_pipeline_, &subliminal_string_, &backdrop_,
@@ -759,22 +759,22 @@ bool SceneRenderer::EnsureTargets(gpu::Extent2D extent, gpu::Extent2D output, bo
               CreateTarget(history_, ldr_format_, output, color | gpu::ImageUsage::TransferDst, c) &&
               CreateTarget(ao_[0], kAoFormat, extent, color, c) && CreateTarget(ao_[1], kAoFormat, extent, color | gpu::ImageUsage::TransferSrc, c);
     const gpu::Extent2D shift1{std::max(output.width >> 1, 1u), std::max(output.height >> 1, 1u)};
-    const gpu::Extent2D shift2{std::max(output.width >> 2, 1u), std::max(output.height >> 2, 1u)};
-    const gpu::Extent2D shift3{std::max(output.width >> 3, 1u), std::max(output.height >> 3, 1u)};
-    ok = ok && CreateTarget(dof_half_, kPostFormat, shift1, color, c) && CreateTarget(dof_quarter_[0], kPostFormat, shift2, color, c) &&
-         CreateTarget(dof_quarter_[1], kPostFormat, shift2, color, c) && CreateTarget(dof_eighth_[0], kPostFormat, shift3, color, c) &&
-         CreateTarget(dof_eighth_[1], kPostFormat, shift3, color, c) && CreateTarget(velocity_, kPostFormat, output, color, c) &&
+    // Reserve retired descriptors cheaply. Both motion paths share their own
+    // full-res scratch; mb_blur_ must remain separate for date-scene history.
+    ok = ok && CreateTarget(dof_half_, kPostFormat, {1, 1}, color, c) && CreateTarget(dof_quarter_[0], kPostFormat, shift1, color, c) &&
+         CreateTarget(dof_quarter_[1], kPostFormat, shift1, color, c) && CreateTarget(dof_eighth_[0], kPostFormat, shift1, color, c) &&
+         CreateTarget(dof_eighth_[1], kPostFormat, shift1, color, c) && CreateTarget(velocity_, kPostFormat, output, color, c) &&
          CreateTarget(object_velocity_, kPostFormat, extent, color, c) && CreateTarget(mb_blur_[0], kPostFormat, output, color, c) &&
          CreateTarget(mb_blur_[1], kPostFormat, output, color, c) &&
-         CreateTarget(mb_original_bake_, kPostFormat, shift1, color, c) &&
-         CreateTarget(mb_original_blur_[0], kPostFormat, shift1, color, c) &&
-         CreateTarget(mb_original_blur_[1], kPostFormat, shift1, color, c);
+         CreateTarget(mb_original_bake_, kPostFormat, output, color, c) &&
+         CreateTarget(mb_original_blur_[0], kPostFormat, output, color, c) &&
+         CreateTarget(mb_original_blur_[1], kPostFormat, output, color, c);
     for (uint32_t i = 0; i < 5 && ok; ++i) {
         const uint32_t round = (2u << i) - 1u;
         ok = CreateTarget(mb_tile_[i], kPostFormat, {(output.width + round) >> (i + 1), (output.height + round) >> (i + 1)}, color, c);
     }
     ok = ok && CreateTarget(mb_neighbour_, kPostFormat, mb_tile_[4].Extent(), color, c) &&
-         CreateTarget(mb_bake_, kPostFormat, output, color, c);
+         CreateTarget(mb_bake_, kPostFormat, {1, 1}, color, c);
     ok = ok && (!upscaling || CreateUpscaleTargets(extent, output));
     ok = ok && (!upscaling ||
                 (CreateTarget(mirror_history_, kHdrFormat, extent, color | gpu::ImageUsage::TransferDst, c) &&
@@ -1089,10 +1089,10 @@ void SceneRenderer::CreateBuiltinResources() {
     UploadImage(material_tex_, gpu::Format::R8G8B8A8Unorm, {256, 2, 1}, material.data(), material.size());
 
     ScreenSettings identity;
-    std::vector<uint8_t> lut;
+    std::vector<float> lut;
     BuildColorLut(std::string(), identity, lut);
-    UploadImage(color_lut_, gpu::Format::R8G8B8A8Unorm, {256, 16, 1}, lut.data(), lut.size());
-    UploadImage(color_lut_prev_, gpu::Format::R8G8B8A8Unorm, {256, 16, 1}, lut.data(), lut.size());
+    UploadImage(color_lut_, gpu::Format::R32G32B32A32Sfloat, {graphics.lut_sampling == 1 ? 4096u : 256u, graphics.lut_sampling == 1 ? 64u : 16u, 1}, lut.data(), lut.size() * sizeof(float));
+    UploadImage(color_lut_prev_, gpu::Format::R32G32B32A32Sfloat, {graphics.lut_sampling == 1 ? 4096u : 256u, graphics.lut_sampling == 1 ? 64u : 16u, 1}, lut.data(), lut.size() * sizeof(float));
 }
 
 bool SceneRenderer::LoadResources(Vfs& vfs) {
@@ -1137,7 +1137,7 @@ bool SceneRenderer::LoadResources(Vfs& vfs) {
     return true;
 }
 
-bool SceneRenderer::BuildColorLut(const std::string& path, const ScreenSettings& screen, std::vector<uint8_t>& out) {
+bool SceneRenderer::BuildColorLut(const std::string& path, const ScreenSettings& screen, std::vector<float>& out) {
     std::vector<glm::vec4> filter;
     if (!path.empty() && vfs_) {
         FtexTexture ftex;
@@ -1180,14 +1180,15 @@ bool SceneRenderer::BuildColorLut(const std::string& path, const ScreenSettings&
         }
         return result;
     };
-    out.assign(256 * 16 * 4, 0);
-    for (int g = 0; g < 16; ++g) {
-        for (int b = 0; b < 16; ++b) {
-            for (int r = 0; r < 16; ++r) {
-                const glm::vec4 v = sample(glm::vec3(r, g, b) * screen.color_scale);
-                uint8_t* p = &out[(static_cast<size_t>(g) * 256 + b * 16 + r) * 4];
+    const int size = graphics.lut_sampling == 1 ? 64 : 16;
+    out.assign(size * size * size * 4, 0);
+    for (int g = 0; g < size; ++g) {
+        for (int b = 0; b < size; ++b) {
+            for (int r = 0; r < size; ++r) {
+                const glm::vec4 v = sample(glm::vec3(r, g, b) * (15.0f / static_cast<float>(size-1)) * screen.color_scale);
+                float* p = &out[(static_cast<size_t>(g) * size * size + b * size + r) * 4];
                 for (int c = 0; c < 4; ++c) {
-                    p[c] = ToByte(Hermite(std::clamp(v[c], 0.0f, 1.0f), screen.start_slope, screen.end_slope));
+                    p[c] = Hermite(std::clamp(v[c], 0.0f, 1.0f), screen.start_slope, screen.end_slope);
                 }
             }
         }
@@ -1196,18 +1197,18 @@ bool SceneRenderer::BuildColorLut(const std::string& path, const ScreenSettings&
 }
 
 void SceneRenderer::UpdateColorLut(const ScreenSettings& screen) {
-    const std::string key = std::format("{}|{:.4f}|{:.4f}|{:.4f}|{:.4f}|{:.4f}", screen.lut_path, screen.color_scale.x, screen.color_scale.y,
-                                        screen.color_scale.z, screen.start_slope, screen.end_slope);
+    const std::string key = std::format("{}|{:.4f}|{:.4f}|{:.4f}|{:.4f}|{:.4f}|{}", screen.lut_path, screen.color_scale.x, screen.color_scale.y,
+                                        screen.color_scale.z, screen.start_slope, screen.end_slope, graphics.lut_sampling);
     if (key == color_lut_key_) {
         return;
     }
-    std::vector<uint8_t> lut;
+    std::vector<float> lut;
     BuildColorLut(screen.lut_path, screen, lut);
     gpu_->WaitIdle();
     std::swap(color_lut_, color_lut_prev_);
-    UploadImage(color_lut_, gpu::Format::R8G8B8A8Unorm, {256, 16, 1}, lut.data(), lut.size());
+    UploadImage(color_lut_, gpu::Format::R32G32B32A32Sfloat, {graphics.lut_sampling == 1 ? 4096u : 256u, graphics.lut_sampling == 1 ? 64u : 16u, 1}, lut.data(), lut.size() * sizeof(float));
     if (color_lut_key_.empty()) {
-        UploadImage(color_lut_prev_, gpu::Format::R8G8B8A8Unorm, {256, 16, 1}, lut.data(), lut.size());
+        UploadImage(color_lut_prev_, gpu::Format::R32G32B32A32Sfloat, {graphics.lut_sampling == 1 ? 4096u : 256u, graphics.lut_sampling == 1 ? 64u : 16u, 1}, lut.data(), lut.size() * sizeof(float));
     }
     color_lut_prev_key_ = color_lut_key_;
     color_lut_key_ = key;
@@ -1344,50 +1345,12 @@ void SceneRenderer::ReadTimestamps(FrameSlot& slot) {
 }
 
 float SceneRenderer::MeterLuminance(const glm::vec2* texels, uint32_t count) {
-    constexpr double kCap = 32.0;
-    double all = 0.0;
-    double covered = 0.0;
-    uint32_t n_covered = 0;
-    for (uint32_t i = 0; i < count; ++i) {
-        const float x = texels[i].x;
-        const double l = std::isfinite(x) ? std::min(std::log(static_cast<double>(std::max(x, 0.0f)) + 2.0), kCap) : std::log(2.0);
-        all += l;
-        if (texels[i].y > 0.5f) {
-            covered += l;
-            ++n_covered;
-        }
-    }
-    if (count == 0 || n_covered == 0) {
-        return -1.0f;
-    }
-    const double mean = n_covered < count ? covered / n_covered : all / count;
-    const float measured = static_cast<float>(std::exp(mean) - 2.0);
-    return std::isfinite(measured) ? std::max(measured, 0.0f) : -1.0f;
+    return exposure_math::Meter({texels, count});
 }
 
 void SceneRenderer::ReadMeasurements(FrameSlot& slot, float dt, const ExposureSettings& settings) {
     const bool advance_exposure = std::isfinite(dt) && dt > 0.0f;
-    constexpr double kExposureFrame = 1.0 / 30.0;
-    if (advance_exposure) {
-        exposure_time_ += dt;
-    }
-    const double elapsed = exposure_time_ - exposure_updated_at_;
-    const bool exposure_tick = advance_exposure && elapsed + 1.0e-7 >= kExposureFrame;
-    if (exposure_tick) {
-        exposure_feedback_time_ = exposure_tick_times_[exposure_tick_index_];
-        exposure_tick_times_[exposure_tick_index_] = exposure_time_;
-        exposure_tick_index_ = (exposure_tick_index_ + 1) % exposure_tick_times_.size();
-        exposure_updated_at_ += std::floor((elapsed + 1.0e-7) / kExposureFrame) * kExposureFrame;
-        exposure_camera_dt_ = exposure_camera_dt_ * (59.0 / 60.0) +
-                              static_cast<double>(exposure_previous_dt_ * (1.0f / 60.0f));
-        if (!exposure_clock_started_) {
-            const uint64_t wrapped_delta = uint64_t{0} - uint64_t{1};
-            exposure_previous_dt_ = static_cast<float>(static_cast<double>(wrapped_delta) * 1.0e-6);
-            exposure_clock_started_ = true;
-        } else {
-            exposure_previous_dt_ = std::max(dt, static_cast<float>(kExposureFrame));
-        }
-    }
+    if (advance_exposure) exposure_time_ += std::min(dt, 0.1f);
     if (slot.timed) {
         ReadTimestamps(slot);
     }
@@ -1444,31 +1407,17 @@ void SceneRenderer::ReadMeasurements(FrameSlot& slot, float dt, const ExposureSe
     if (!advance_exposure) {
         return;
     }
-    if (!adaptation_valid_ || !toggles.adaptation || !lighting_ || !lighting_->valid) {
-        exposure_samples_.clear();
-        return;
-    }
-    exposure_samples_.push_back({slot.exposure_sample_time, measured});
-    while (exposure_samples_.size() > 1 && exposure_samples_[1].time <= exposure_feedback_time_ + 1.0e-7) {
-        exposure_samples_.pop_front();
-    }
-    if (!exposure_tick) {
-        return;
-    }
-    const float feedback = exposure_samples_.front().luminance;
-    ev_ = std::clamp(ev_, settings.min_ev, settings.max_ev);
-    const float adapted = feedback * std::exp2(-(settings.compensation + ExposureCompensationFor(ev_, settings)));
-    const float target = std::clamp(ev_ + 0.5f * (std::log2(settings.key + 0.001f) - std::log2(adapted + 0.001f)), settings.min_ev, settings.max_ev);
-    const float diff = target - ev_;
-    float step = diff * (1.0f - std::pow(0.98f, 60.0f * static_cast<float>(exposure_camera_dt_))) * settings.speed * std::min(1.0f, std::abs(diff));
-    if (std::abs(step) > std::abs(diff)) {
-        step = diff;
-    }
-    if (std::isfinite(step)) {
-        ev_ += step;
-    }
+    if (!adaptation_valid_ || !toggles.adaptation || !lighting_ || !lighting_->valid || settings.pinned) return;
+    // Remove the readback frame's full pre-exposure, including compensation.
+    // An absolute scene target avoids feeding delayed exposed values back in.
+    if (!std::isfinite(slot.exposure_used) || slot.exposure_used <= 0.0f) return;
+    const float raw = measured / slot.exposure_used;
+    if (!std::isfinite(raw)) return;
+    const float target = exposure_math::TargetEv(raw, settings.key, settings.min_ev, settings.max_ev);
+    ev_ = exposure_math::Adapt(std::clamp(ev_, settings.min_ev, settings.max_ev), target, dt, settings.speed);
     if (static const bool ev_trace = std::getenv("PT_EV_TRACE") != nullptr; ev_trace) {
-        LogInfo("ev trace: measured {:.5f} adapted {:.5f} target {:.3f} ev {:.3f} dt {:.4f} camera_dt {:.6f} time {:.6f} sample_time {:.6f}", feedback, adapted, target, ev_, dt, exposure_camera_dt_, exposure_time_, exposure_samples_.front().time);
+        LogInfo("ev trace: measured {:.6f} raw {:.6f} sample_exposure {:.6f} target {:.5f} ev {:.5f} dt {:.6f} time {:.6f} sample_time {:.6f}",
+                measured, raw, slot.exposure_used, target, ev_, dt, exposure_time_, slot.exposure_sample_time);
     }
 }
 
@@ -1571,11 +1520,10 @@ bool SceneRenderer::DumpTargets(const std::string& prefix) {
         gpu_->DestroyBuffer(buffer);
     }
     static const char* const kPathNames32[RayTracing::kPathImages32] = {"pt_reservoir", "pt_reservoir_history0", "pt_reservoir_history1",
-                                                                        "pt_reference"};
-    static const char* const kPathNames16[RayTracing::kPathImages16] = {"pt_spec_unshadowed", "pt_diffuse_moments0", "pt_diffuse_moments1",
-                                                                        "pt_specular_moments0", "pt_specular_moments1", "pt_variance_ping",
-                                                                        "pt_variance_pong", "pt_layer_geometry", "pt_layer_raw", "pt_layer_history0",
-                                                                        "pt_layer_history1"};
+        "pt_reference", "pt_diffuse_moments0", "pt_diffuse_moments1", "pt_specular_moments0", "pt_specular_moments1",
+        "pt_variance_ping", "pt_variance_pong"};
+    static const char* const kPathNames16[RayTracing::kPathImages16] = {"pt_spec_unshadowed", "pt_layer_geometry", "pt_layer_raw",
+        "pt_layer_history0", "pt_layer_history1"};
     for (uint32_t i = 0; i < RayTracing::kPathImages32 + RayTracing::kPathImages16; ++i) {
         const bool wide = i < RayTracing::kPathImages32;
         RenderTarget& target = wide ? pt_images32_[i] : pt_images16_[i - RayTracing::kPathImages32];

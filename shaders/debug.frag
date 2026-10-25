@@ -39,9 +39,9 @@ void main() {
     } else if (mode == 9u) {
         c = vec3(material.w);
     } else if (mode == 10u || mode == 12u) {
-        c = SrgbEncode(clamp(ImgFetch(IMG_DIFFUSE, pixel).rgb * pass.f0.x, 0.0, 1.0));
+        c = SrgbEncode(SceneRadiance(max(ImgFetch(IMG_DIFFUSE, pixel).rgb * pass.f0.x, vec3(0.0)), 1.0, frame.hdr_output.x > 0.5));
     } else if (mode == 11u) {
-        c = SrgbEncode(clamp(ImgFetch(IMG_SPECULAR, pixel).rgb * pass.f0.x, 0.0, 1.0));
+        c = SrgbEncode(SceneRadiance(max(ImgFetch(IMG_SPECULAR, pixel).rgb * pass.f0.x, vec3(0.0)), 1.0, frame.hdr_output.x > 0.5));
     } else if (mode == 13u) {
         c = vec3(normal.w);
     } else if (mode == 14u) {
@@ -49,7 +49,7 @@ void main() {
     } else if (mode == 15u) {
         c = SrgbEncode(clamp(SrgbDecode(albedo.rgb) * pass.f0.y, 0.0, 1.0));
     } else if (mode == 16u) {
-        c = SrgbEncode(clamp(ImgFetch(IMG_MIRROR, pixel).rgb * pass.f0.x, 0.0, 1.0));
+        c = SrgbEncode(SceneRadiance(max(ImgFetch(IMG_MIRROR, pixel).rgb * pass.f0.x, vec3(0.0)), 1.0, frame.hdr_output.x > 0.5));
     }
     out_color = vec4(c, 1.0);
 }

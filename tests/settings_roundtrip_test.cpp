@@ -24,7 +24,7 @@ bool Near(float a, float b) { return std::abs(a - b) <= 1e-5f * std::max(1.0f, s
 bool Same(const pt::AppSettings& a, const pt::AppSettings& b) {
     const auto& x = a.display;
     const auto& y = b.display;
-    return x.hdr==y.hdr && x.hdr_paper_white==y.hdr_paper_white && x.hdr_peak==y.hdr_peak && x.fps_limit==y.fps_limit && a.audio.surround==b.audio.surround && a.audio.controller_speaker==b.audio.controller_speaker && a.audio.output_device==b.audio.output_device && Near(a.audio.controller_speaker_volume,b.audio.controller_speaker_volume) && a.input.rumble_profile==b.input.rumble_profile && x.width == y.width && x.height == y.height && x.fullscreen == y.fullscreen && x.vsync == y.vsync &&
+    return x.hdr==y.hdr && x.hdr_paper_white==y.hdr_paper_white && x.hdr_peak==y.hdr_peak && x.hdr_sdr_eotf==y.hdr_sdr_eotf && x.fps_limit==y.fps_limit && a.audio.surround==b.audio.surround && a.audio.controller_speaker==b.audio.controller_speaker && a.audio.output_device==b.audio.output_device && Near(a.audio.controller_speaker_volume,b.audio.controller_speaker_volume) && a.input.rumble_profile==b.input.rumble_profile && x.width == y.width && x.height == y.height && x.fullscreen == y.fullscreen && x.vsync == y.vsync &&
            x.letterbox == y.letterbox &&
            Near(a.input.mouse_sensitivity, b.input.mouse_sensitivity) && Near(a.input.gamepad_sensitivity, b.input.gamepad_sensitivity) &&
            Near(a.input.gamepad_dead_zone, b.input.gamepad_dead_zone) &&
@@ -60,6 +60,31 @@ int main(int argc, char** argv) {
     const std::filesystem::path ini = dir / "roundtrip.ini";
 
     Check("defaults", Same(RoundTrip(ini, {}), {}));
+    for (int mode=0; mode<2; ++mode) {
+        pt::AppSettings chosen;
+        auto& g=chosen.graphics;
+        g.ghost_strength=mode ? 2.0f : 0.0f; g.lens_ghosts=mode!=0;
+        g.bloom_strength=mode ? 2.0f : 0.0f; g.flare_strength=mode ? 0.75f : 0.0f;
+        Check("post intensity controls persist", Same(RoundTrip(ini,chosen),chosen));
+    }
+    {
+        const auto g=LoadText(ini,"[graphics]\nbloom_type=99\nflare_type=-1\nlut_sampling=99\nshadow_toe=-3\npost_sampling=12\nsharpening_type=-2\nbloom_strength=nan\nflare_strength=9\n").graphics;
+        Check("invalid post settings bounded",g.bloom_type==1 && g.flare_type==1 && g.lut_sampling==1 && g.shadow_toe==1 && g.post_sampling==1 && g.sharpening_type==1 && g.bloom_strength==1.0f && g.flare_strength==2.0f);
+    }
+
+    Check("old disabled bloom migrates to zero intensity",LoadText(ini,"[graphics]\nbloom=0\nbloom_strength=1\n").graphics.bloom_strength==0);
+    Check("old disabled ghosts migrate to zero intensity",LoadText(ini,"[graphics]\nlens_ghosts=0\n").graphics.ghost_strength==0);
+    Check("new ghost intensity overrides old switch",LoadText(ini,"[graphics]\nlens_ghosts=0\nghost_strength=1.5\n").graphics.ghost_strength==1.5f);
+    Check("ghost intensity rejects nonfinite",LoadText(ini,"[graphics]\nghost_strength=nan\n").graphics.ghost_strength==1);
+    Check("ghost intensity bounded",LoadText(ini,"[graphics]\nghost_strength=20\n").graphics.ghost_strength==2);
+    Check("HDR5 settings retain Improved Perceptual grain", LoadText(ini, "[graphics]\nfilm_grain=.5\n").graphics.film_grain_type == 1);
+    Check("Original grain round trips", RoundTrip(ini, LoadText(ini, "[graphics]\nfilm_grain_type=0\n")).graphics.film_grain_type == 0);
+    Check("Improved grain round trips", RoundTrip(ini, LoadText(ini, "[graphics]\nfilm_grain_type=1\n")).graphics.film_grain_type == 1);
+    Check("grain type bounds", LoadText(ini, "[graphics]\nfilm_grain_type=-7\n").graphics.film_grain_type == 0 && LoadText(ini, "[graphics]\nfilm_grain_type=7\n").graphics.film_grain_type == 1);
+    Check("malformed grain type retains default", LoadText(ini, "[graphics]\nfilm_grain_type=wrong\n").graphics.film_grain_type == 1);
+    Check("legacy settings default to gamma 2.2", LoadText(ini, "[display]\nhdr=1\n").display.hdr_sdr_eotf == 1);
+    Check("SDR EOTF clamps invalid low value", LoadText(ini, "[display]\nhdr_sdr_eotf=-1\n").display.hdr_sdr_eotf == 0);
+    Check("SDR EOTF clamps invalid high value", LoadText(ini, "[display]\nhdr_sdr_eotf=9\n").display.hdr_sdr_eotf == 2);
 
     {
         const auto old = LoadText(ini, "[upscaling]\nneural_quality=performance\n");
@@ -99,6 +124,8 @@ int main(int argc, char** argv) {
         {"display.hdr", [](auto& s) { s.display.hdr = true; }},
         {"display.fps_limit", [](auto& s) { s.display.fps_limit = 144; }},
         {"display.hdr_paper_white", [](auto& s) { s.display.hdr_paper_white = 320; }},
+        {"display.hdr_sdr_eotf sRGB", [](auto& s) { s.display.hdr_sdr_eotf = 0; }},
+        {"display.hdr_sdr_eotf gamma 2.4", [](auto& s) { s.display.hdr_sdr_eotf = 2; }},
         {"display.hdr_peak", [](auto& s) { s.display.hdr_peak = 1600; }},
         {"audio.controller_speaker", [](auto& s) { s.audio.controller_speaker = true; }},
         {"audio.controller_speaker_volume", [](auto& s) { s.audio.controller_speaker_volume = 0.25f; }},
@@ -141,11 +168,11 @@ int main(int argc, char** argv) {
         {"graphics.shadow_quality", [](auto& s) { s.graphics.shadow_quality = 0; }},
         {"graphics.ambient_occlusion", [](auto& s) { s.graphics.ambient_occlusion = false; }},
         {"graphics.reflections", [](auto& s) { s.graphics.reflections = false; }},
-        {"graphics.bloom", [](auto& s) { s.graphics.bloom = false; }},
+        {"graphics.bloom", [](auto& s) { s.graphics.bloom = false; s.graphics.bloom_strength=0; }},
         {"graphics.depth_of_field", [](auto& s) { s.graphics.depth_of_field = false; }},
         {"graphics.motion_blur", [](auto& s) { s.graphics.motion_blur = false; }},
         {"graphics.lens_distortion", [](auto& s) { s.graphics.lens_distortion = false; }},
-        {"graphics.lens_ghosts", [](auto& s) { s.graphics.lens_ghosts = false; }},
+        {"graphics.lens_ghosts", [](auto& s) { s.graphics.lens_ghosts = false; s.graphics.ghost_strength=0; }},
         {"graphics.deband", [](auto& s) { s.graphics.deband = true; }},
         {"graphics.film_grain", [](auto& s) { s.graphics.film_grain = 0.75f; }},
         {"graphics.clarity", [](auto& s) { s.graphics.clarity = 0.4f; }},

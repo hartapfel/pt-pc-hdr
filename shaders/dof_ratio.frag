@@ -15,6 +15,6 @@ layout(location = 0) out vec4 out_color;
 void main() {
     View v = frame.views[pass.ids.w];
     float z = ViewZ(v, ImgFetch(IMG_DEPTH, ivec2(gl_FragCoord.xy)).x);
-    float r = (z - pass.f0.x) / z;
+    float r = (z - pass.f0.x) / max(z, 1e-5);
     out_color = vec4(1.0, 1.0, 1.0, 0.5 * max(-1.0, min(1.0, pass.f0.w * (0.0 > r ? pass.f0.z * r : r))) + 0.5);
 }

@@ -36,8 +36,12 @@ int main(int argc, char** argv) {
     check(update::CompareVersions("0.1", "0.1.0") == 0, "missing parts are zero");
     check(update::CompareVersions("1.0.5.1", "1.0.5") > 0, "four-part hotfix follows the released three-part version");
     check(update::CompareVersions("1.0.6", "1.0.5.1") > 0, "next patch follows a four-part hotfix");
+    const auto hdr_release = update::ParseManifest(
+        R"({"tag_name":"v1.0.8-hdr","html_url":"https://github.com/hartapfel/pt-pc-hdr/releases/tag/v1.0.8-hdr","assets":[{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","browser_download_url":"https://github.com/hartapfel/pt-pc-hdr/releases/download/v1.0.8-hdr/P.T.PC.Port.1.0.8-HDR.Setup.exe","size":1000}]})", "windows");
+    check(hdr_release && !hdr_release->package_url.empty() && hdr_release->package_size == 1000, "HDR fork tag and installer are discovered");
+    check(!update::ParseManifest(R"({"tag_name":"v1.0.8-hdrjunk","html_url":"https://example.org/r"})", "windows"), "invalid HDR suffix rejected");
     const auto hotfix_release = update::ParseManifest(
-        R"({"tag_name":"v1.0.5.1","html_url":"https://example.org/hotfix","assets":[{"name":"P.T.PC.Port.Setup.exe","browser_download_url":"https://example.org/hotfix.exe"}]})",
+        R"({"tag_name":"v1.0.5.1","html_url":"https://example.org/hotfix","assets":[{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","browser_download_url":"https://example.org/hotfix.exe"}]})",
         "windows");
     check(hotfix_release && hotfix_release->version == "v1.0.5.1" && hotfix_release->url == "https://example.org/hotfix.exe",
           "GitHub update accepts a four-part hotfix tag and selects its installer");
@@ -96,7 +100,7 @@ more é \"q\"",
           {"name":"P.T.PC.Port-portable-windows.zip","browser_download_url":"https://example.org/portable.zip"},
           {"name":"P.T.PC.Port.Setup-linux","browser_download_url":"https://example.org/linux"},
           {"name":"P.T.PC.Port-macOS-x64.zip","browser_download_url":"https://example.org/intel.zip"},
-          {"name":"P.T.PC.Port.Setup.exe","browser_download_url":"https://example.org/windows.exe"},
+          {"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","browser_download_url":"https://example.org/windows.exe"},
           {"name":"P.T.PC.Port-macOS-arm64.zip","browser_download_url":"https://example.org/apple.zip"}
         ]})";
     const auto gh_windows = update::ParseManifest(github, "windows");
@@ -120,7 +124,7 @@ more é \"q\"",
     check(!update::ParseManifest(R"({"message":"API rate limit exceeded"})", "windows"), "API errors are not updates");
     check(!update::ParseManifest(R"({"tag_name":"v1.0.2.","html_url":"https://example.org/r"})", "windows"), "malformed version tag is ignored");
     const auto unsafe_asset = update::ParseManifest(R"({"tag_name":"v1.0.2","html_url":"https://example.org/r",
-        "assets":[{"name":"P.T.PC.Port.Setup.exe","browser_download_url":"http://example.org/setup.exe"}]})", "windows");
+        "assets":[{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","browser_download_url":"http://example.org/setup.exe"}]})", "windows");
     check(unsafe_asset && unsafe_asset->url == "https://example.org/r", "non-HTTPS asset is ignored");
 
     // ---- the signed update manifest (docs/updates.md, "Signed update manifest") ----
@@ -149,7 +153,7 @@ more é \"q\"",
         ed25519::PublicKey(u8(key), release_like);
         const std::string public_key(reinterpret_cast<const char*>(release_like), 32);
         const std::string manifest = R"({"format":1,"product":"pt-pc-port","version":"1.0.4",)"
-                                     R"("packages":{"windows":{"name":"P.T.PC.Port.Setup.exe","size":10,"sha256":")" + std::string(64, 'a') + R"("}},)"
+                                     R"("packages":{"windows":{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","size":10,"sha256":")" + std::string(64, 'a') + R"("}},)"
                                      R"("files":{"windows":[{"path":"pt.exe","size":3,"sha256":")" + std::string(64, 'b') + R"("}]}})";
         auto sign = [&](const std::string& text) {
             uint8_t s[64];
@@ -194,7 +198,7 @@ more é \"q\"",
         check(update::ReleasePublicKey().size() == 32, "the embedded release public key is 32 bytes");
         // the files' places in the package (the ranged download): read, and refused outside the package or alone
         auto files_manifest = [&](const std::string& extra) {
-            return R"({"format":1,"version":"1.0.5","packages":{"windows":{"name":"P.T.PC.Port.Setup.exe","size":1000,"sha256":")" + std::string(64, 'a') +
+            return R"({"format":1,"version":"1.0.5","packages":{"windows":{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","size":1000,"sha256":")" + std::string(64, 'a') +
                    R"("}},"files":{"windows":[{"path":"pt.exe","size":30,"sha256":")" + std::string(64, 'b') + "\"" + extra +
                    R"(},{"path":"shaders/a.spv","size":5,"sha256":")" + std::string(64, 'c') + R"(","offset":900,"packed":4}]}})";
         };
@@ -256,7 +260,7 @@ more é \"q\"",
     }
     // ---- the update's address allow-list ----
     {
-        check(update::AllowedAssetUrl("https://github.com/LoreanXavier/pt-pc/releases/download/v1.0.4/P.T.PC.Port.Setup.exe"), "allow github.com");
+        check(update::AllowedAssetUrl("https://github.com/LoreanXavier/pt-pc/releases/download/v1.0.4/P.T.PC.Port.1.0.8-HDR.Setup.exe"), "allow github.com");
         check(update::AllowedAssetUrl("https://objects.githubusercontent.com/github-production-release-asset/1"), "allow objects.githubusercontent.com");
         check(update::AllowedAssetUrl("https://release-assets.githubusercontent.com/github-production-release-asset/1?sp=r"), "allow release-assets");
         check(update::AllowedAssetUrl("https://GitHub.com/x"), "host compared without case");
@@ -269,10 +273,10 @@ more é \"q\"",
         if (os::GetEnv("PT_UPDATE_TEST").empty())
             check(!update::AllowedAssetUrl("http://127.0.0.1:8000/x") && !update::AllowedAssetUrl("https://localhost/x"), "loopback refused outside tests");
         const char* signed_release = R"({"tag_name":"v1.0.4","html_url":"https://github.com/LoreanXavier/pt-pc/releases/tag/v1.0.4","assets":[
-          {"name":"P.T.PC.Port.Setup.exe","size":416382464,"browser_download_url":"https://github.com/LoreanXavier/pt-pc/releases/download/v1.0.4/P.T.PC.Port.Setup.exe"},
+          {"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","size":416382464,"browser_download_url":"https://github.com/LoreanXavier/pt-pc/releases/download/v1.0.4/P.T.PC.Port.1.0.8-HDR.Setup.exe"},
           {"name":"P.T.PC.Port.Setup-linux","size":5,"browser_download_url":"https://example.org/P.T.PC.Port.Setup-linux"}]})";
         const auto release = update::ParseManifest(signed_release, "windows");
-        check(release && release->package_url.ends_with("/P.T.PC.Port.Setup.exe") && release->package_size == 416382464 &&
+        check(release && release->package_url.ends_with("/P.T.PC.Port.1.0.8-HDR.Setup.exe") && release->package_size == 416382464 &&
                   release->page.ends_with("/v1.0.4") && !release->signed_update,
               "the in-game update's package and its size from the release assets");
         const auto linux_release = update::ParseManifest(signed_release, "linux");

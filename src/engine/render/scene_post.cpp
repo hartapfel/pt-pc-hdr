@@ -6,6 +6,7 @@
 #include <string>
 
 #include "engine/render/scene_renderer.h"
+#include "engine/render/motion_math.h"
 
 namespace pt {
 namespace {
@@ -59,6 +60,7 @@ void SceneRenderer::RecordReflectionSample(gpu::CommandList& cmd, const SceneLig
 void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& lighting, float dt) {
     const ScreenSettings& screen = lighting.screen;
     const ExposureSettings& exposure = lighting.exposure;
+    const bool hdr_output = hdr_scene_active_;
     gpu::PassPush push;
     push.ids.w = post_view_;
     push.f1.x = 0.0f;
@@ -99,7 +101,18 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         };
         const float size = exposure.bloom_size;
         const float weight = exposure.bloom_weight;
-        if (size >= 0.1f && size < 0.2f) {
+        if (graphics.bloom_type == 1) {
+            const int passes = std::clamp(static_cast<int>(std::floor(size * 10.0f)), 1, 64);
+            // Match the original chain's total gain (first Kawase pair applies
+            // weight twice, accumulation once), independently of filter shape.
+            const float gain = size >= 0.1f && size < 0.2f ? 1.0f : weight*weight*weight;
+            for (int i = 0; i < passes; ++i) {
+                const float radius = std::max(0.5f, (static_cast<float>(i) + 0.5f)*0.5f);
+                blur(0, 1, gaussian_, glm::vec4(radius, 0, 0, 0), false);
+                blur(1, 0, gaussian_, glm::vec4(0, radius, 0, 0), false);
+                blur(0, 2, bloom_add_, glm::vec4(0, gain/static_cast<float>(passes), 0, 0), i == 0);
+            }
+        } else if (size >= 0.1f && size < 0.2f) {
             blur(0, 1, gaussian_, glm::vec4(1.0f, 0.0f, 0.0f, 0.0f), false);
             blur(1, 2, gaussian_, glm::vec4(0.0f, 1.0f, 0.0f, 0.0f), false);
         } else {
@@ -144,7 +157,7 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     cmd.BeginPass(output_extent_, {{&ldr_[0], false, {}}});
     push.ids.x = 0;
     const float lut_blend = std::clamp(screen.lut_blend, 0.0f, 1.0f);
-    push.f0 = glm::vec4(bloom ? 1.0f : 0.0f, lut_blend, lighting.valid ? 1.0f : renderer_->exposure, 0.0f);
+    push.f0 = glm::vec4(bloom ? graphics.bloom_strength : 0.0f, lut_blend, lighting.valid ? 1.0f : renderer_->exposure, 0.0f);
     static const bool tonemap_test = std::getenv("PT_TONEMAP_TEST") != nullptr;
     if (tonemap_test) {
         push.f0.x = 0.0f;
@@ -152,24 +165,10 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         push.f0.w = 0.0f;
     }
     gpu::PassPush tone = push;
-    tone.f1 = glm::vec4(graphics.deband ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+    tone.f1 = glm::vec4(graphics.deband && !hdr_output ? 1.0f : 0.0f, hdr_output ? 1.0f : 0.0f, static_cast<float>(graphics.lut_sampling), 0.0f);
     Fullscreen(cmd, tonemap_, tone);
     cmd.EndPass();
     cmd.UseTargets({{&ldr_[0], gpu::Layout::ShaderReadOnly}});
-
-    if (renderer_->OutputMode() != RendererOutputMode::Sdr && vr_eye_ < 0 && renderer_->HdrBoost().image && hdr_boost_pipeline_) {
-        RenderTarget boost;
-        boost.image = renderer_->HdrBoost();
-        boost.layout = gpu::Layout::ColorAttachment;
-        cmd.BeginPass(output_extent_, {{&boost, false, {}}});
-        gpu::PassPush gain;
-        const bool lens = toggles.distortion && screen.screen_distortion && lighting.valid;
-        const float bloom_weight = bloom && !tonemap_test ? 1.0f : 0.0f;
-        const float ratio = renderer_->HdrPeak() / std::max(renderer_->HdrPaperWhite(), 1.0f);
-        gain.f0 = glm::vec4(lens ? 1.0f : 0.0f, lighting.valid ? 1.0f : renderer_->exposure, bloom_weight, ratio);
-        Fullscreen(cmd, hdr_boost_pipeline_, gain);
-        cmd.EndPass();
-    }
 
     auto ldr_index = [](int i) { return i == 0 ? gpu::kImgLdrA : gpu::kImgLdrB; };
     auto run = [&](gpu::PipelineHandle pipeline, const gpu::PassPush& p) {
@@ -189,8 +188,9 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     if (toggles.depth_of_field && screen.depth_of_field && lighting.valid) {
         RecordDepthOfField(cmd, screen, current);
     }
-    const bool street_blur = toggles.motion_blur && screen.motion_blur && lighting.valid && screen.smooth_camera_motion_blur;
-    if (toggles.motion_blur && screen.motion_blur && lighting.valid && !street_blur) {
+    // Optical integration precedes the creative LUT in both indoor and street
+    // scenes. The street camera may smooth velocity, not change colour space.
+    if (toggles.motion_blur && screen.motion_blur && lighting.valid) {
         RecordMotionBlur(cmd, screen, current);
     }
     if (subliminal_string_state_.value > 0.0f && subliminal_string_) {
@@ -198,18 +198,15 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         s.ids = glm::uvec4(subliminal_string_state_.texture, ldr_index(current), 0, 0);
         const float across = output_extent_.height ? (static_cast<float>(output_extent_.width) / static_cast<float>(output_extent_.height)) / (16.0f / 9.0f) : 1.0f;
         s.f0 = glm::vec4(subliminal_string_state_.position, subliminal_string_state_.value, across);
-        s.f1 = glm::vec4(bloom && !tonemap_test ? 1.0f : 0.0f, lighting.valid ? 1.0f : renderer_->exposure, 0.0f, 0.0f);
+        s.f1 = glm::vec4(bloom && !tonemap_test ? graphics.bloom_strength : 0.0f, lighting.valid ? 1.0f : renderer_->exposure, hdr_output ? 1.0f : 0.0f, 0.0f);
         run(subliminal_string_, s);
     }
     if (toggles.color_lut) {
         gpu::PassPush lut;
         lut.ids = glm::uvec4(ldr_index(current), 1, 0, post_view_);
         lut.f0 = glm::vec4(0.0f, lut_blend, 1.0f, 1.0f);
-        lut.f1 = glm::vec4(graphics.deband ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+        lut.f1 = tone.f1;
         run(tonemap_, lut);
-    }
-    if (street_blur) {
-        RecordMotionBlur(cmd, screen, current);
     }
 
     if (backdrop_state_.opacity > 0.0f && backdrop_state_.texture && backdrop_) {
@@ -219,7 +216,7 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         b.f0 = glm::vec4(backdrop_state_.opacity, backdrop_state_.darken, backdrop_state_.tear, backdrop_state_.time);
         b.f1 = glm::vec4(backdrop_state_.tint, backdrop_state_.aspect);
         b.f2 = glm::vec4(output_extent_.height ? static_cast<float>(output_extent_.width) / static_cast<float>(output_extent_.height) : 16.0f / 9.0f,
-                         0.0f, 0.0f, 0.0f);
+                         hdr_output ? 1.0f : 0.0f, 0.0f, 0.0f);
         b.m = glm::mat4(0.0f);
         b.m[0] = glm::vec4(backdrop_state_.zoom, backdrop_state_.center, backdrop_state_.focus);
         run(backdrop_, b);
@@ -278,6 +275,7 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     if (screen.colour_banding_canceller && lighting.valid) {
         cmd.UseTargets({{&depth_, gpu::Layout::DepthReadOnly}});
         push.ids = glm::uvec4(ldr_index(current), 0, 0, main_view_.index);
+        push.f1.z = hdr_output ? 1.0f : 0.0f;
         run(banding_, push);
     }
 
@@ -290,16 +288,18 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     const bool grain = toggles.film_grain && screen.film_grain && lighting.valid;
     const bool distortion = toggles.distortion && screen.screen_distortion && lighting.valid;
     push.f0 = glm::vec4(distortion ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
-    push.f1 = glm::vec4(graphics.clarity, graphics.deband ? 1.0f : 0.0f, 0.0f, 0.0f);
+    push.f1 = glm::vec4(graphics.sharpening_type == 0 ? graphics.clarity : 0.0f, graphics.deband && !hdr_output ? 1.0f : 0.0f, hdr_output ? 1.0f : 0.0f, 0.0f);
     Fullscreen(cmd, screen_fx_, push);
     renderer_->grain[0] = grain ? 1.0f : 0.0f;
-    renderer_->grain[1] = screen.grain_alt ? 1.0f : 0.0f;
+    renderer_->grain[1] = (screen.grain_alt ? 1.0f : 0.0f) + (graphics.film_grain_type == 1 ? 2.0f : 0.0f);
     renderer_->grain[2] = screen.grain_strength * graphics.film_grain;
+    renderer_->grain[3] = graphics.sharpening_type == 1 ? graphics.clarity : 0.0f;
     renderer_->grain_offset[0] = screen.grain_offset.x;
     renderer_->grain_offset[1] = screen.grain_offset.y;
     if (vfx_filter && vr_eye_ < 0) {
         SceneFilterContext context = FilterContext(cmd, 2u);
         context.color_format = renderer_->SceneColorFormat();
+        context.source = ldr_[current].image.view;
         vfx_filter(context);
         BindSets(cmd, gpu::BindPoint::Graphics);
     }
@@ -330,68 +330,43 @@ void SceneRenderer::PostPass(gpu::CommandList& cmd, RenderTarget& target, gpu::P
 
 bool SceneRenderer::RecordDepthOfField(gpu::CommandList& cmd, const ScreenSettings& screen, int& current) {
     const float aperture = screen.aperture;
-    if ((screen.dof_flags & 2u) == 0 && (aperture == 0.0f || !(aperture < 100.0f))) {
-        return false;
-    }
+    if (!std::isfinite(aperture) || aperture <= 0.0f ||
+        ((screen.dof_flags & 2u) == 0 && aperture >= 100.0f)) return false;
     const float f = screen.focal_length * 0.001f;
     const float d = std::max(screen.focus_distance, 1.0e-5f);
     const float s = std::max(0.0f, f * f / aperture / std::max(d - f, 1.0e-5f)) * 26666.666f;
-    const float near_limit = std::min((d - d * 0.01f) / (d * 0.01f) * s, 20.0f);
-    const float near_scale = s / near_limit < 1.0f ? s / near_limit : 1.0f;
+    if (!std::isfinite(s) || s <= 1.0e-6f) return false;
+    const float near_limit = std::min(99.0f * s, 20.0f);
+    const float near_scale = std::min(s / near_limit, 1.0f);
     const uint32_t scene = current == 0 ? gpu::kImgLdrA : gpu::kImgLdrB;
-    auto rt = [](const RenderTarget& t) {
-        const gpu::Extent2D e = t.Extent();
-        return glm::vec4(e.width, e.height, 1.0f / e.width, 1.0f / e.height);
-    };
+    // Keep the authored lens/focus and nominal 1080p footprint. All optical
+    // buffers are now half resolution; legacy descriptor names remain stable.
+    const auto extent = dof_quarter_[0].Extent();
+    const float resolution = static_cast<float>(output_extent_.height) / 1080.0f;
+    // Match the saturated two-pass hex filter's second moment with a disk:
+    // E[r^2] was 2*.75*ringRadius^2; a disk has E[r^2]=R^2/2.
+    const float far_radius = std::min(s, 10.0f) * 0.4330127f * resolution;
+    const float near_radius = near_limit * 0.3464102f * resolution;
     gpu::PassPush push;
     push.ids = glm::uvec4(0, 0, 0, post_view_);
     push.f0 = glm::vec4(d, near_limit, near_scale, 1.0f);
     cmd.UseTargets({{&depth_, gpu::Layout::DepthReadOnly}});
     PostPass(cmd, ldr_[current], dof_ratio_, push);
-
     push = gpu::PassPush{};
+    push.f2 = glm::vec4(extent.width, extent.height, 1.0f / extent.width, 1.0f / extent.height);
     push.ids = glm::uvec4(scene, 0, 0, post_view_);
-    push.f2 = rt(dof_half_);
-    PostPass(cmd, dof_half_, dof_down_, push);
-    push.ids = glm::uvec4(gpu::kImgDofHalf, 0, 1, post_view_);
-    push.f2 = rt(dof_quarter_[0]);
+    push.f0.x = far_radius;
     PostPass(cmd, dof_quarter_[0], dof_down_, push);
-    push.ids = glm::uvec4(gpu::kImgDofQuarterA, 0, 1, post_view_);
-    push.f2 = rt(dof_eighth_[0]);
-    PostPass(cmd, dof_eighth_[0], dof_down_, push);
-
-    const float far_size = std::max(4.0f, std::min(s, 10.0f));
-    const float far_span = std::max(0.0001f, far_size - 4.0f);
-    push.f0 = glm::vec4(rt(dof_quarter_[0]).z, rt(dof_quarter_[0]).w, 0.0f, 0.0f);
-    push.f1 = glm::vec4(far_size * 0.125f, 4.0f / far_size, std::max(1.0f, far_size / far_span), 0.0f);
-    push.f2 = rt(dof_quarter_[0]);
-    push.ids = glm::uvec4(gpu::kImgDofQuarterA, scene, 0, post_view_);
+    push.ids = glm::uvec4(gpu::kImgDofQuarterA, 0, 0, post_view_);
     PostPass(cmd, dof_quarter_[1], dof_blur_, push);
-    push.ids = glm::uvec4(gpu::kImgDofQuarterB, scene, 0, post_view_);
-    PostPass(cmd, dof_quarter_[0], dof_blur_, push);
-
-    if ((screen.dof_flags & 1u) == 0) {
-        const float near_span = std::max(0.0001f, near_limit - 8.0f);
-        push.f0 = glm::vec4(rt(dof_eighth_[0]).z, rt(dof_eighth_[0]).w, 0.0f, 0.0f);
-        push.f1 = glm::vec4(1.0f, 8.0f / near_limit, std::max(1.0f, near_limit / near_span), 0.0f);
-        push.f2 = rt(dof_eighth_[0]);
-        push.ids = glm::uvec4(gpu::kImgDofEighthA, scene, 1, post_view_);
-        PostPass(cmd, dof_eighth_[1], dof_blur_, push);
-        push.ids = glm::uvec4(gpu::kImgDofEighthB, scene, 1, post_view_);
-        PostPass(cmd, dof_eighth_[0], dof_blur_, push);
-        push = gpu::PassPush{};
-        push.ids = glm::uvec4(gpu::kImgDofEighthA, 0, 2, post_view_);
-        push.f2 = rt(dof_quarter_[1]);
-        PostPass(cmd, dof_quarter_[1], dof_down_, push);
-    }
-
-    const float blend_size = std::min(s, 10.0f);
-    const float near_amount = std::min(near_limit * 0.125f, 1.0f);
+    push.ids = glm::uvec4(scene, 0, 1, post_view_);
+    push.f0.x = near_radius;
+    PostPass(cmd, dof_eighth_[0], dof_down_, push);
+    push.ids = glm::uvec4(gpu::kImgDofEighthA, 0, 1, post_view_);
+    PostPass(cmd, dof_eighth_[1], dof_blur_, push);
     push = gpu::PassPush{};
-    push.ids = glm::uvec4(scene, gpu::kImgDofQuarterB, gpu::kImgDofQuarterA, post_view_);
-    push.f0 = glm::vec4(blend_size > 4.0f ? blend_size * 0.25f : 1.0f, (screen.dof_flags & 1u) ? 0.0f : near_limit * 0.125f, s < 4.0f ? s * 0.25f : 1.0f,
-                        near_limit >= 8.0f ? 1.0f : near_amount);
-    push.f2 = rt(ldr_[1 - current]);
+    push.ids = glm::uvec4(scene, gpu::kImgDofEighthB, gpu::kImgDofQuarterB, post_view_);
+    push.f0 = glm::vec4(far_radius * 2.0f, (screen.dof_flags & 1u) ? 0.0f : 1.0f, 0.0f, 0.0f);
     PostPass(cmd, ldr_[1 - current], dof_blend_, push);
     current = 1 - current;
     return true;
@@ -432,12 +407,15 @@ void SceneRenderer::UpdateMotion(const Camera& camera, float dt) {
         cut = true;
     }
     if (!motion_history_valid_) {
+        previous = camera;
         up_.reset = true;
     }
     const float aspect = static_cast<float>(output_extent_.width) / static_cast<float>(std::max(1u, output_extent_.height));
     previous_view_projection_ = previous.Projection(aspect) * previous.View();
     const float step = std::clamp(interval, 1.0e-4f, 1.0f);
-    frame_time_ = reference ? static_cast<double>(step) : static_cast<double>(step * 0.016666668f) + frame_time_ * 0.9833333333333333;
+    // Shutter seconds / the SAME interval used by the velocity buffer. Smoothing
+    // this denominator independently creates blur pulses when frame time changes.
+    frame_time_ = static_cast<double>(step);
     if (reference || !lighting_->screen.smooth_camera_motion_blur) {
         blur_previous_view_projection_ = previous_view_projection_;
         blur_rates_valid_ = false;
@@ -469,16 +447,18 @@ bool SceneRenderer::RecordMotionBlur(gpu::CommandList& cmd, const ScreenSettings
     if (!(shutter >= 0.001f)) {
         return false;
     }
-    const float ratio = screen.fixed_shutter ? shutter * 60.0f : shutter * static_cast<float>(1.0 / frame_time_);
-    const float scale = ratio * 0.5f;
-    const bool smooth = screen.smooth_camera_motion_blur;
-    RenderTarget& bake = smooth ? mb_bake_ : mb_original_bake_;
-    RenderTarget* blur = smooth ? mb_blur_ : mb_original_blur_;
-    const uint32_t bake_image = smooth ? gpu::kImgMbBake : gpu::kImgMbOriginalBake;
-    const uint32_t blur_image = smooth ? gpu::kImgMbBlurA : gpu::kImgMbOriginalBlurA;
+    // Authored shutter values are seconds. Preserve the 60 Hz reference strength
+    // also for the legacy fixed-shutter flag instead of tying it to render FPS.
+    const float scale = motion_math::ShutterScale(shutter, static_cast<float>(frame_time_));
+    // mb_blur_ also holds persistent date-scene history. Keep optical scratch
+    // separate so enabling cinematic motion blur cannot overwrite that history.
+    RenderTarget& bake = mb_original_bake_;
+    RenderTarget* blur = mb_original_blur_;
+    const uint32_t bake_image = gpu::kImgMbOriginalBake;
+    const uint32_t blur_image = gpu::kImgMbOriginalBlurA;
     gpu::PassPush push;
     push.ids = glm::uvec4(gpu::kImgObjectVelocity, 0, 0, post_view_);
-    push.f0 = glm::vec4(1920.0f / 128.0f, 1080.0f / 128.0f, smooth ? std::min(1.0f, static_cast<float>(frame_time_) * 30.0f) : 0.0f, 0.0f);
+    push.f0 = glm::vec4(1920.0f / 128.0f, 1080.0f / 128.0f, std::min(1.0f, static_cast<float>(frame_time_) * 30.0f), 0.0f);
     push.m = blur_previous_view_projection_;
     cmd.UseTargets({{&depth_, gpu::Layout::DepthReadOnly}});
     PostPass(cmd, velocity_, mb_velocity_, push);
@@ -495,23 +475,23 @@ bool SceneRenderer::RecordMotionBlur(gpu::CommandList& cmd, const ScreenSettings
     push.f0 = glm::vec4(0.5f, 0.5f, 1.0f, scale);
     PostPass(cmd, bake, mb_bake_pipeline_, push);
     const uint32_t picture = current == 0 ? gpu::kImgLdrA : gpu::kImgLdrB;
-    const float shown = smooth ? 2.2f / renderer_->OutputBrightness() : 0.0f;
-    if (smooth) {
-        gpu::PassPush decode;
-        decode.ids = glm::uvec4(picture, 0, 0, post_view_);
-        decode.f0 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-        decode.f1 = glm::vec4(0.0f, shown, 0.0f, 0.0f);
-        PostPass(cmd, blur[1], mb_decode_, decode);
-    }
-    push.ids = glm::uvec4(smooth ? blur_image + 1 : picture, bake_image, smooth ? 1u : 0u, post_view_);
+    // Both display modes filter extended-sRGB post buffers in linear light.
+    gpu::PassPush decode;
+    decode.ids = glm::uvec4(picture, 0, 0, post_view_);
+    decode.f0 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+    decode.f1.z = 1.0f;
+    PostPass(cmd, blur[1], mb_decode_, decode);
+    push.ids = glm::uvec4(blur_image + 1, bake_image, 1u, post_view_);
     PostPass(cmd, blur[0], mb_mcguire_, push);
-    push.ids = glm::uvec4(blur_image, bake_image, smooth ? 1u : 0u, post_view_);
+    push.ids = glm::uvec4(blur_image, bake_image, 1u, post_view_);
     push.f0 = glm::vec4(0.5f, 0.5f, 0.16666667f, scale);
     PostPass(cmd, blur[1], mb_mcguire_, push);
-    push.ids = glm::uvec4(blur_image + 1, 0, 0, post_view_);
+    push.ids = glm::uvec4(blur_image + 1, picture, 0, post_view_);
     push.f0 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-    push.f1 = glm::vec4(shown, 0.0f, 0.0f, 0.0f);
-    PostPass(cmd, ldr_[current], mb_composite_, push);
+    push.f1 = glm::vec4(0.0f, 0.0f, 2.0f, 0.0f);
+    cmd.UseTargets({{&ldr_[current], gpu::Layout::ShaderReadOnly}});
+    PostPass(cmd, ldr_[1 - current], mb_decode_, push);
+    current = 1 - current;
     return true;
 }
 

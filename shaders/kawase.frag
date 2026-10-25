@@ -21,5 +21,6 @@ void main() {
     c += Img(source, SMP_LINEAR_CLAMP, in_uv + vec2(-o.x, o.y));
     c += Img(source, SMP_LINEAR_CLAMP, in_uv + vec2(o.x, o.y));
     c *= 0.25 * pass.f0.y;
-    out_color = pass.f0.z > 0.0 ? clamp(c, 0.0, 1.0) : c;
+    out_color = frame.hdr_output.x > 0.5 ? vec4(SceneRadiance(c.rgb, 1.0, true), c.a)
+        : (pass.f0.z > 0.0 ? clamp(c, 0.0, 1.0) : c);
 }

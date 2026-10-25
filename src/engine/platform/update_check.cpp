@@ -50,6 +50,8 @@ bool Placeholder(std::string_view url) {
 bool VersionTag(std::string_view tag) {
     if (tag.size() > 64) return false;
     if (tag.starts_with('v') || tag.starts_with('V')) tag.remove_prefix(1);
+    // The fork uses numeric release versions with a stable -hdr suffix.
+    if (tag.ends_with("-hdr")) tag.remove_suffix(4);
     bool digit = false;
     for (const char c : tag) {
         if (c >= '0' && c <= '9') digit = true;
@@ -60,7 +62,7 @@ bool VersionTag(std::string_view tag) {
 }
 
 std::string_view AssetName(std::string_view platform) {
-    if (platform == "windows") return "P.T.PC.Port.Setup.exe";
+    if (platform == "windows") return "P.T.PC.Port.1.0.8-HDR.Setup.exe";
     if (platform == "linux") return "P.T.PC.Port.Setup-linux";
     if (platform == "macos-arm64") return "P.T.PC.Port-macOS-arm64.zip";
     if (platform == "macos-x64") return "P.T.PC.Port-macOS-x64.zip";
@@ -164,7 +166,7 @@ std::optional<Release> ParseManifest(std::string_view json, std::string_view pla
 }
 
 std::string_view PackageAsset(std::string_view platform) {
-    if (platform == "windows") return "P.T.PC.Port.Setup.exe";
+    if (platform == "windows") return "P.T.PC.Port.1.0.8-HDR.Setup.exe";
     if (platform == "linux") return "P.T.PC.Port.Setup-linux";
     return {};
 }

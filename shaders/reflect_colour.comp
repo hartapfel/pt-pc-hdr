@@ -33,7 +33,7 @@ vec3 Warped(ivec2 pixel) {
         uv = pass.f1.zw + (1.0 - p.x) * (pass.f1.xy - pass.f1.zw) + (1.0 - p.y) * (pass.f0.zw - pass.f1.zw);
     }
     vec3 c = ImgLod(pass.ids.x, SMP_LINEAR_CLAMP, uv, 0.0).rgb;
-    return min(max(c, vec3(0.0)), vec3(1.0));
+    return SceneRadiance(max(c, vec3(0.0)), 1.0, frame.hdr_output.x > 0.5);
 }
 
 void main() {
@@ -56,7 +56,8 @@ void main() {
         barrier();
     }
     if (index == 0u) {
-        vec3 c = floor(clamp(s_sum[0], vec3(0.0), vec3(1.0)) * 255.0 + 0.5) / 255.0;
+        vec3 c = frame.hdr_output.x > 0.5 ? SceneRadiance(s_sum[0], 1.0, true)
+            : floor(clamp(s_sum[0], vec3(0.0), vec3(1.0)) * 255.0 + 0.5) / 255.0;
         partial[pass.ids.y] = c.rg;
         partial[pass.ids.y + 1u] = vec2(c.b, 1.0);
     }

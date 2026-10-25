@@ -1,3 +1,25 @@
+#include "srgb.glsl"
+
+// SDR display reference: 0 = sRGB, 1 = gamma 2.2, 2 = gamma 2.4.
+// For linear sRGB input L, the gamma option is the RenoDX-style correction
+// pow(SrgbEncode(L), gamma). Here the post chain already contains those codes.
+vec3 DecodeSdrReference(vec3 code, float eotf) {
+    code = max(code, vec3(0.0));
+    return eotf > 0.5 ? pow(code, vec3(eotf > 1.5 ? 2.4 : 2.2)) : SrgbDecode(code);
+}
+
+vec3 EncodeSdrReference(vec3 linear_color, float eotf) {
+    linear_color = max(linear_color, vec3(0.0));
+    return eotf > 0.5 ? pow(linear_color, vec3(1.0 / (eotf > 1.5 ? 2.4 : 2.2))) : SrgbEncode(linear_color);
+}
+
+// Paired with the scene/display shoulder, not applied to already mapped UI.
+vec3 HdrSceneBrightness(vec3 code, float brightness) {
+    // Numerical overflow guard only: this extended code ceiling is far beyond
+    // display range and is compressed by the shoulder before any FP16 write.
+    return min(pow(max(code, vec3(0.0)), vec3(1.0 / max(brightness, 0.1))), vec3(65504.0));
+}
+
 float PqEncode(float nits) {
     const float m1 = 2610.0 / 16384.0;
     const float m2 = 2523.0 / 32.0;
@@ -8,14 +30,17 @@ float PqEncode(float nits) {
     return pow((c1 + c2 * y) / (1.0 + c3 * y), m2);
 }
 
-vec3 CompositeDisplayColor(vec3 color, float gain, float brightness, float output_mode, vec2 hdr) {
-    if (output_mode > 0.5) {
-        color = pow(max(color, vec3(0.0)), vec3(1.0 / brightness));
-    } else {
+vec3 CompositeDisplayColor(vec3 color, float brightness, float output_mode, vec2 hdr, float sdr_eotf) {
+    if (output_mode <= 0.5) {
         color = pow(clamp(color, 0.0, 1.0), vec3(1.0 / brightness));
     }
     if (output_mode > 0.5) {
-        color = pow(clamp(color, vec3(0.0), vec3(1.0)), vec3(2.2)) * pow(clamp(gain, 1.0, 8.0), 2.2);
+        // Extended scene RGB has already been display-mapped before the UI.
+        // Alpha is coverage; never use it to reconstruct highlight brightness.
+        // Decode once to the selected SDR display reference. The gamma option
+        // emulates the SDR monitor's EOTF; it is not a second texture decode.
+        color = DecodeSdrReference(color, sdr_eotf);
+        // Guard FP16 rounding / overlay overflow only, never the scene tonemapper.
         float strongest = max(color.r, max(color.g, color.b)) * hdr.x;
         if (strongest > hdr.y) {
             color *= hdr.y / strongest;

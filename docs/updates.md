@@ -7,7 +7,7 @@ Offline, with updates disabled, or when GitHub is unavailable/rate-limits the re
 ## Configuration
 
 `CMakeLists.txt` sets `PT_VERSION` and the metadata endpoint `PT_UPDATE_MANIFEST_URL` (the historical variable name is retained
-for existing build/test overrides). The default endpoint is `https://api.github.com/repos/LoreanXavier/pt-pc/releases/latest`.
+for existing build/test overrides). The default endpoint is `https://api.github.com/repos/hartapfel/pt-pc-hdr/releases/latest`.
 `cmake/version.cmake` writes these values into the generated header at build time. `tools/ci/release.py --version` supplies the
 release version; `PT_VERSION_OVERRIDE` and `PT_UPDATE_MANIFEST_URL_OVERRIDE` are per-build overrides. The environment variable
 `PT_UPDATE_MANIFEST_URL` overrides the endpoint at runtime for tests; HTTPS only. A `.invalid` host disables the request.
@@ -15,11 +15,11 @@ release version; `PT_VERSION_OVERRIDE` and `PT_UPDATE_MANIFEST_URL_OVERRIDE` are
 ## Release discovery
 
 The checker reads GitHub's `tag_name`, `html_url`, `body` and asset `name`/`browser_download_url` fields. It ignores drafts,
-prereleases, nonnumeric release tags and API errors. It compares numeric versions with the embedded current version and selects:
+prereleases, release tags other than numeric versions (optionally followed by `-hdr`) and API errors. It compares numeric versions with the embedded current version and selects:
 
 | Platform | Release asset |
 | --- | --- |
-| Windows | `P.T.PC.Port.Setup.exe` |
+| Windows | `P.T.PC.Port.1.0.8-HDR.Setup.exe` |
 | Linux | `P.T.PC.Port.Setup-linux` |
 | Apple silicon | `P.T.PC.Port-macOS-arm64.zip` |
 | Intel Mac | `P.T.PC.Port-macOS-x64.zip` |

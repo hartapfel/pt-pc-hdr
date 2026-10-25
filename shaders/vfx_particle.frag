@@ -2,6 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "bindless.glsl"
+#include "radiance.glsl"
 layout(set = 0, binding = 0) uniform PT_TEXTURE2D_ARRAY textures[];
 layout(set = 0, binding = 2) uniform PT_TEXTURECUBE_ARRAY cube_textures[];
 layout(set = 1, binding = 1) uniform sampler2D depth_texture;
@@ -153,7 +154,7 @@ void TppFog(vec3 eye, vec3 point, out vec3 inscatter, out float transmittance) {
     vec3 directional = ray.w * (mie.rgb * mie_phase + ray.rgb * rayleigh_phase) / max(vec3(1.0e-6), sigma);
     float opacity = 1.0 - exp(-depth);
     vec3 color = g1.rgb + directional * (1.0 - exp(-depth * sigma));
-    inscatter = clamp(color * opacity, 0.0, 1.0);
+    inscatter = SceneRadiance(max(color * opacity, vec3(0.0)), 1.0, fog_block.mode.y != 0u);
     transmittance = 1.0 - opacity;
 }
 
@@ -166,7 +167,7 @@ float FlareAlpha(float tex_alpha) {
         }
         a *= mix(1.0, in_luminance.x * push.frame.x / max(len, 1.0), min(in_luminance.z, 1.0));
     }
-    a = floor(clamp(a, 0.0, 1.0) * 255.0) / 255.0;
+    a = in_extra.x > 0.0 ? clamp(a, 0.0, 1.0) : floor(clamp(a, 0.0, 1.0) * 255.0) / 255.0;
     vec2 pixel = in_params.xy / push.frame.zw;
     float tolerance = in_params.w;
     float v = clamp((SceneDepth(pixel + vec2(0.69, -3.94)) + tolerance - in_params.z) / tolerance, 0.0, 1.0);
@@ -197,8 +198,28 @@ void main() {
     float alpha_far;
     float transmit = 0.0;
     if ((flags & kFlare) != 0u) {
+        if (in_extra.x > 0.0) {
+            // Positive 3x3 tent filter in flare texture space. Premultiply before
+            // filtering to avoid color fringes at transparent texel boundaries.
+            vec4 filtered=vec4(0.0);
+            for (int y=-1;y<=1;++y) for (int x=-1;x<=1;++x) {
+                vec2 uv=base_uv+vec2(x,y)*in_extra.x;
+                vec4 t=texture(PT_TEX2D(in_info.x),clamp(uv,0.0,1.0));
+                if (any(lessThan(uv,vec2(0))) || any(greaterThan(uv,vec2(1)))) t=vec4(0);
+                filtered+=vec4(t.rgb*t.a,t.a)*float((x==0?2:1)*(y==0?2:1))/16.0;
+            }
+            tex=vec4(filtered.a>0.0 ? filtered.rgb/filtered.a : vec3(0),filtered.a);
+            // Convolution cannot draw outside the sprite quad. Fade its last
+            // filter radius to zero so truncation cannot introduce a new rim.
+            float edge=min(min(base_uv.x,base_uv.y),min(1.0-base_uv.x,1.0-base_uv.y));
+            tex.a*=smoothstep(0.0,in_extra.x,edge);
+        }
         rgb = tex.rgb * in_color.rgb;
         alpha = FlareAlpha(tex.a);
+        if (in_extra.y > 0.5 && in_extra.x > 0.0) {
+            vec2 edge = min(in_extra.zw, 1.0 - in_extra.zw);
+            alpha *= smoothstep(0.0, 0.12, min(edge.x, edge.y));
+        }
     } else if ((flags & kLiquid) != 0u) {
         vec3 nt;
         if ((flags & kLiquidHnm) != 0u) {

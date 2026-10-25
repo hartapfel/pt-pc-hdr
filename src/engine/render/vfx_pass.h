@@ -28,6 +28,7 @@ public:
     void RecordForward(const SceneVfxContext& context);
     void RecordFilter(const SceneFilterContext& context);
     bool HasOpaqueLiquids() const;
+    bool HdrOutput() const { return renderer_ && !renderer_->plain_output && renderer_->OutputMode() != RendererOutputMode::Sdr; }
     void RecordLiquidDepth(const SceneVfxContext& context);
     const vfx::RenderList& List() const { return list_; }
     void AddPipelineWarmup(vk::PipelineWarmup& warmup, gpu::Format color, gpu::Format depth, gpu::Format filter_color);

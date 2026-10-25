@@ -7,11 +7,24 @@
 layout(local_size_x = 1) in;
 layout(std430, set = 0, binding = 0) buffer Results { vec4 values[]; } results;
 void main() {
-    results.values[29] = vec4(SrgbDecode(ReflectionBlendBase(vec3(2.5, 1.5, .5), true) * (1.0 - 1.0e-6)), 0);
-    results.values[30] = vec4(SrgbDecode(ReflectionBlendBase(vec3(2.5, 1.5, .5), false)), 0);
-    results.values[31] = vec4(SrgbDecode(ReflectionBlendBase(vec3(.2, .5, .8), true)), 0);
-    results.values[32] = vec4(SrgbDecode(ReflectionBlendBase(vec3(.2, .5, .8), false)), 0);
-    results.values[33] = vec4(SrgbDecode(ReflectionBlendBase(vec3(2.5), true) * 0.0 + SrgbEncode(vec3(.25))), 0);
+    // Above-white reflection steps must stay distinct, including premultiplied history.
+    results.values[34] = vec4(SrgbDecode(ReflectionBlendColor(vec3(4, 2, 1), true)), 0);
+    results.values[35] = vec4(SrgbDecode(ReflectionBlendColor(vec3(8, 4, 2), true)), 0);
+    results.values[36] = vec4(SrgbDecode(ReflectionBlendColor(vec3(8, 4, 2), false)), 0);
+    results.values[37] = vec4(SrgbDecode(ReflectionBlendColor(vec3(4), true) * .5 + ReflectionBlendColor(vec3(4), true) * .5), .5);
+    results.values[38] = vec4(SceneRadiance(vec3(128, 64, 32), 64, true), 0);
+    results.values[39] = vec4(SceneRadiance(vec3(128, 64, 32), 64, false), 0);
+    results.values[40] = vec4(SceneRadiance(vec3(64, 32, 16), 32, true), 0);
+    results.values[41] = vec4(SceneRadiance(vec3(64, 32, 16), 32, false), 0);
+    results.values[42] = vec4(SceneRadiance(vec3(120000, 60000, 30000), 1, true), 0);
+    results.values[43] = vec4(SceneRadiance(vec3(-1, 0, .02), 1, true), 0);
+    results.values[44] = vec4(SceneRadiance(vec3(uintBitsToFloat(0x7fc00000u)), 1, true), 0);
+    results.values[45] = vec4(SceneRadiance(vec3(uintBitsToFloat(0x7f800000u)), 1, true), 0);
+    results.values[29] = vec4(SrgbDecode(ReflectionBlendColor(vec3(2.5, 1.5, .5), true) * (1.0 - 1.0e-6)), 0);
+    results.values[30] = vec4(SrgbDecode(ReflectionBlendColor(vec3(2.5, 1.5, .5), false)), 0);
+    results.values[31] = vec4(SrgbDecode(ReflectionBlendColor(vec3(.2, .5, .8), true)), 0);
+    results.values[32] = vec4(SrgbDecode(ReflectionBlendColor(vec3(.2, .5, .8), false)), 0);
+    results.values[33] = vec4(SrgbDecode(ReflectionBlendColor(vec3(2.5), true) * 0.0 + SrgbEncode(vec3(.25))), 0);
 
     results.values[20] = vec4(FlashlightSurfaceNdc(vec2(.75,.25), vec2(.01,-.02)), 0, 0);
     results.values[21] = vec4(FlashlightReactive(vec3(.5,0,0), vec3(1,0,0), .8, vec3(-1,0,0), 5), 0, 0, 0);

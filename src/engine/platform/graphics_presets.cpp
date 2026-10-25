@@ -6,18 +6,21 @@ void ApplyGraphicsPreset(AppSettings& s, GraphicsPreset preset, bool rt) {
     s.ray_tracing=AppSettings::RayTracing{};
     auto& g=s.graphics;
     switch(preset) {
+    case GraphicsPreset::Original:
+        g.film_grain_type=0;g.film_grain=1.0f;g.bloom_strength=1.0f;g.flare_strength=1.0f;g.ghost_strength=1.0f;
+        break;
     case GraphicsPreset::Low:
-        g.shadow_quality=1;g.ambient_occlusion=false;g.reflections=false;g.bloom=false;
-        g.depth_of_field=false;g.motion_blur=false;g.lens_distortion=false;g.lens_ghosts=false;g.film_grain=.25f;g.texture_detail=0;g.deband=true;
+        g.shadow_quality=1;g.ambient_occlusion=false;g.reflections=false;g.bloom=false;g.bloom_strength=0.0f;
+        g.depth_of_field=false;g.motion_blur=false;g.lens_distortion=false;g.lens_ghosts=false;g.ghost_strength=0.0f;g.film_grain=.25f;g.texture_detail=0;g.deband=true;
         break;
     case GraphicsPreset::High:
         g.anisotropy=16;g.texture_detail=2;
-        g.motion_blur=false;g.lens_ghosts=false;g.film_grain=.25f;g.clarity=.25f;g.deband=true;
+        g.motion_blur=false;g.lens_ghosts=true;g.ghost_strength=.25f;g.flare_strength=.5f;g.bloom_strength=1.0f;g.film_grain_type=1;g.film_grain=.5f;g.clarity=.25f;g.deband=true;
         break;
     case GraphicsPreset::Ultra:
         g.anisotropy=16;g.texture_detail=2;g.ray_quality=3;
         g.depth_of_field=true;g.motion_blur=true;g.bloom=true;g.lens_distortion=true;g.film_grain=1.0f;g.clarity=.4f;g.deband=true;
-        g.lens_ghosts=false;
+        g.lens_ghosts=true;g.ghost_strength=.25f;g.flare_strength=.5f;g.bloom_strength=1.0f;g.film_grain_type=1;g.film_grain=.5f;
         if(rt) {s.ray_tracing.shadows=2;s.ray_tracing.reflections=true;s.ray_tracing.ambient_occlusion=true;s.ray_tracing.contact_shadows=true;}
         if(rt) g.ray_quality=4;
         break;

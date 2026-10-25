@@ -33,7 +33,7 @@ vec3 Clamp(vec3 c) {
         return vec3(0.0);
     }
     float bright = Luma709(c) * v.exposure.x;
-    return bright > pass.f0.w ? c * (pass.f0.w / bright) : c;
+    return frame.hdr_output.x <= 0.5 && bright > pass.f0.w ? c * (pass.f0.w / bright) : c;
 }
 
 float LayerEnd(float t) {
@@ -189,7 +189,7 @@ void Trace(ivec2 pixel, ivec2 size) {
             g_pt_seen_emissive = true;
         }
         float e = max(v.exposure.x, 1.0e-12);
-        vec3 mixed = mix(SrgbEncode(min(R * e, vec3(1.0))), min(D * e, vec3(1.0)), Saturate(dirt.a));
+        vec3 mixed = mix(SrgbEncode(SceneRadiance(R * e, 1.0, frame.hdr_output.x > 0.5)), SceneRadiance(D * e, 1.0, frame.hdr_output.x > 0.5), Saturate(dirt.a));
         result = vec4(SrgbDecode(mixed) / e, 6.0 + 1.0);
         if ((uint(pass.f1.w + 0.5) & 2u) != 0u) {
             result.rgb = mix(R, D, Saturate(dirt.a));
@@ -215,7 +215,7 @@ void Trace(ivec2 pixel, ivec2 size) {
         }
     }
     float peak = max(result.r, max(result.g, result.b));
-    vec3 stored = glass ? (peak > 60000.0 ? result.rgb * (60000.0 / peak) : result.rgb) : min(result.rgb, vec3(64.0));
+    vec3 stored = glass ? (peak > 60000.0 ? result.rgb * (60000.0 / peak) : result.rgb) : SceneRadiance(result.rgb, 64.0, frame.hdr_output.x > 0.5);
     imageStore(pt_layer_raw, pixel, vec4(stored, result.a));
     imageStore(pt_layer_geometry, pixel, vec4(coat_normal, coat_distance));
     if ((uint(pass.f1.w + 0.5) & 4u) != 0u && mirror && !glass) {

@@ -1955,7 +1955,8 @@ void ApplyGraphicsSettings(App& app) {
     app.scene.toggles.motion_blur=g.motion_blur;
     app.scene.toggles.film_grain=g.film_grain>0;
     app.scene.toggles.distortion=g.lens_distortion;
-    pt::vfx::SetFlareGhostScale(g.lens_ghosts?0.75f:0.0f);
+    pt::vfx::SetFlareGhostScale(0.75f * g.ghost_strength);
+    pt::vfx::SetFlareQuality(g.flare_type, g.flare_strength);
 }
 
 int AnisotropyFromApp(const pt::AppSettings& s) {
@@ -2953,6 +2954,8 @@ public:
             }
             peak.wrap = false;
             display.rows.push_back(std::move(peak));
+            display.rows.push_back(Row(kHdrSdrEotf, "pc_hdr_sdr_eotf", {"sRGB", "Gamma 2.2", "Gamma 2.4"},
+                                       s.display.hdr_sdr_eotf, "pc_note_hdr_sdr_eotf"));
         }
         if (pt::RenderingApiSelectable()) {
             pt::RenderingApi api = pt::RenderingApi::Vulkan;
@@ -3560,6 +3563,10 @@ public:
             app_.renderer.SetHdrLevels(s.display.hdr_paper_white, s.display.hdr_peak);
             break;
         }
+        case kHdrSdrEotf:
+            s.display.hdr_sdr_eotf = std::clamp(value, 0, 2);
+            app_.renderer.SetHdrSdrEotf(s.display.hdr_sdr_eotf);
+            break;
         case kHdrPeak: {
             const std::vector<int> steps = HdrPeakSteps(s.display.hdr_peak);
             if (value >= 0 && value < static_cast<int>(steps.size())) s.display.hdr_peak = steps[value];
@@ -3760,9 +3767,18 @@ public:
         case kRayQuality: {constexpr int kQualities[]={0,1,3,4};s.graphics.ray_quality=kQualities[std::clamp(value,0,3)];break;}
         case kTextureDetail: s.graphics.texture_detail=std::clamp(value,0,2);break;
         case kBloom: s.graphics.bloom=value==1;break;
-        case kLensGhosts: s.graphics.lens_ghosts=value==1;break;
+        case kLensGhosts: s.graphics.ghost_strength=std::clamp(value,0,8)*.25f;s.graphics.lens_ghosts=value>0;break;
         case kDepthOfField: s.graphics.depth_of_field=value==1;break;
         case kMotionBlur: s.graphics.motion_blur=value==1;break;
+        case kBloomType: s.graphics.bloom_type=std::clamp(value,0,1);break;
+        case kFlareType: s.graphics.flare_type=std::clamp(value,0,1);break;
+        case kLutSampling: s.graphics.lut_sampling=std::clamp(value,0,1);break;
+        case kShadowToe: s.graphics.shadow_toe=std::clamp(value,0,1);break;
+        case kPostSampling: s.graphics.post_sampling=std::clamp(value,0,1);break;
+        case kSharpeningType: s.graphics.sharpening_type=std::clamp(value,0,1);break;
+        case kBloomStrength: s.graphics.bloom_strength=std::clamp(value,0,8)*.25f;s.graphics.bloom=value>0;break;
+        case kFlareStrength: s.graphics.flare_strength=std::clamp(value,0,8)*.25f;break;
+        case kFilmGrainType: s.graphics.film_grain_type=std::clamp(value,0,1);break;
         case kFilmGrain: s.graphics.film_grain=std::clamp(value,0,4)*.25f;break;
         case kLensDistortion: s.graphics.lens_distortion=value==1;break;
         case kClarity: s.graphics.clarity=std::clamp(value,0,10)*.1f;break;
@@ -4266,7 +4282,7 @@ private:
         kDisplayMode,
         kResolution,
         kRefreshRate,
-        kVsync, kFpsLimit, kHdr, kHdrPaperWhite, kHdrPeak, kSurround, kControllerSpeaker, kControllerSpeakerVolume, kRumbleProfile, kPromptStyle,
+        kVsync, kFpsLimit, kHdr, kHdrPaperWhite, kHdrPeak, kHdrSdrEotf, kSurround, kControllerSpeaker, kControllerSpeakerVolume, kRumbleProfile, kPromptStyle,
         kUpscaler,
         kQuality,
         kSharpness,
@@ -4297,7 +4313,7 @@ private:
         kRtReflections,
         kGraphicsPreset,kRayTracing,kLighting,kTextures,kEffects,
         kShadowQuality,kRasterAo,kRasterReflections,kRayQuality,kTextureDetail,
-        kBloom,kLensGhosts,kDepthOfField,kMotionBlur,kFilmGrain,kClarity,kLensDistortion,kLetterbox,
+        kBloom,kBloomType,kFlareType,kLutSampling,kShadowToe,kPostSampling,kSharpeningType,kBloomStrength,kFlareStrength,kLensGhosts,kDepthOfField,kMotionBlur,kFilmGrain,kFilmGrainType,kClarity,kLensDistortion,kLetterbox,
         kMods,
         kLoopBrowser, kExtras, kFreecam, kPhotoMode, kStreetWalk, kStreetRestart, kStreetLeave, kLoopLock, kThirdPerson, kGamePlus, kSpeedrun, kLiveSplit, kRunMenu, kRunReal, kRunGame, kRunBest,
         kArchive, kArchiveLock,
@@ -4837,9 +4853,11 @@ private:
         pt::game::PcSettingSection effects{"pc_graphics_effects",0,{}};
         effects.rows.push_back(Row(kDepthOfField,"pc_dof",OffOn(),g.depth_of_field?1:0,"pc_note_dof"));
         effects.rows.push_back(Row(kMotionBlur,"pc_motion_blur",OffOn(),g.motion_blur?1:0,"pc_note_motion_blur"));
-        effects.rows.push_back(Row(kBloom,"pc_bloom",OffOn(),g.bloom?1:0,"pc_note_bloom"));
-        effects.rows.push_back(Row(kLensGhosts,"pc_lens_ghosts",OffOn(),g.lens_ghosts?1:0,"pc_note_lens_ghosts"));
+        effects.rows.push_back(Row(kBloomStrength,"pc_bloom_strength",{"pc_off","25%","50%","75%","100%","125%","150%","175%","200%"},static_cast<int>(g.bloom_strength*4+.5f),"pc_note_bloom_strength"));
+        effects.rows.push_back(Row(kFlareStrength,"pc_flare_strength",{"pc_off","25%","50%","75%","100%","125%","150%","175%","200%"},static_cast<int>(g.flare_strength*4+.5f),"pc_note_flare_strength"));
+        effects.rows.push_back(Row(kLensGhosts,"pc_ghost_strength",{"pc_off","25%","50%","75%","100%","125%","150%","175%","200%"},static_cast<int>(g.ghost_strength*4+.5f),"pc_note_ghost_strength"));
         pt::game::PcSettingSection clarity{"pc_graphics_image",1,{}};
+        clarity.rows.push_back(Row(kFilmGrainType,"pc_film_grain_type",{"pc_grain_original","pc_grain_perceptual"},g.film_grain_type,"pc_note_film_grain_type"));
         clarity.rows.push_back(Row(kFilmGrain,"pc_film_grain",{"pc_off","25%","50%","75%","100%"},static_cast<int>(g.film_grain*4+.5f),"pc_note_film_grain"));
         clarity.rows.push_back(Row(kLensDistortion,"pc_lens_distortion",OffOn(),g.lens_distortion?1:0,"pc_note_lens_distortion"));
         clarity.rows.push_back(Row(kClarity,"pc_clarity",Numbers(0,10),static_cast<int>(g.clarity*10+.5f),"pc_note_clarity"));
@@ -8287,6 +8305,7 @@ int main(int argc, char** argv) {
     settings.hdr = app.settings.display.hdr;
     settings.hdr_paper_white = app.settings.display.hdr_paper_white;
     settings.hdr_peak = app.settings.display.hdr_peak;
+    settings.hdr_sdr_eotf = app.settings.display.hdr_sdr_eotf;
     if (!options.headless) {
         settings.pipeline_cache_dir = UserDataDir() / "pipeline-cache";
     } else if (!options.settings_path.empty()) {

@@ -41,8 +41,8 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "ci"))
 BUILD = REPO / "build" / "release"
 # the public release page (docs/updates.md)
-GITHUB_REPO = "https://github.com/LoreanXavier/pt-pc"
-SETUP_NAME = "P.T.PC.Port.Setup.exe"
+GITHUB_REPO = "https://github.com/hartapfel/pt-pc-hdr"
+SETUP_NAME = "P.T.PC.Port.1.0.8-HDR.Setup.exe"
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 p.add_argument("--dest", type=pathlib.Path, required=True)
@@ -73,7 +73,7 @@ SLOT = pathlib.Path(os.environ["PT_SLOT"]) if os.environ.get("PT_SLOT") else Non
 def build(target):
     """a build, 4 jobs"""
     argv = ["cmd", "/c", r"tools\build_pt.bat", "release", "release", target]
-    env = dict(os.environ, CMAKE_BUILD_PARALLEL_LEVEL="4", NUMBER_OF_PROCESSORS="4")
+    env = dict(os.environ)
     return [sys.executable, str(SLOT), "build", "--", *argv] if SLOT and SLOT.exists() else argv, env
 
 
@@ -213,7 +213,7 @@ if not a.linux_only:
     for index, target in enumerate(("pt", "pt_release")):
         argv, env = build(target)
         if index == 0:
-            env["PT_CMAKE_ARGS"] = release_cache
+            env["PT_CMAKE_ARGS"] = env.get("PT_CMAKE_ARGS", "") + " " + release_cache
         run(f"build {target}", argv, env=env)
     cache = (BUILD / "CMakeCache.txt").read_text(errors="replace")
     if "PT_GAMEPLUS:BOOL=ON" not in cache:
@@ -248,7 +248,7 @@ if not a.linux_only:
     report["installer"] = str(dest / SETUP_NAME)
     # the portable zip as a release file of its own (issue #8): the same runtime the installer carries, for an already
     # extracted CUSA01127 folder; its data folder is made next to pt.exe at the first start
-    portable = dest / "P.T.PC.Port-portable-windows.zip"
+    portable = dest / "P.T.PC.Port.1.0.8-HDR-portable-windows.zip"
     shutil.copy2(runtime, portable)
     add_extractor(portable, extractor, REPO / "dump" / "installer-20261002" / "native" / "extractor-source.zip", source / "LICENSE.txt")
     # a portable copy updates itself from this setup's signed list (docs/updates.md, "Portable copies"): the zip holds exactly the
@@ -266,7 +266,7 @@ else:
         finish(1)
     source = liborbis_source()
     report["installer"] = str(dest / SETUP_NAME)
-    report["files"] = [report["installer"], str(dest / "P.T.PC.Port-portable-windows.zip")]
+    report["files"] = [report["installer"], str(dest / "P.T.PC.Port.1.0.8-HDR-portable-windows.zip")]
 # 4. the Linux setup (docs/installer.md, Linux): the cross build of the game and the setup, the portable zip (the previews the
 # Windows package shot, since the Linux game cannot run here), the helper for linux-x64, the payload and the stamped setup
 if a.linux_setup:

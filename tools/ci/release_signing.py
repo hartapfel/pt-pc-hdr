@@ -26,12 +26,12 @@ import secrets
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_KEYS = pathlib.Path(os.environ.get("PT_RELEASE_KEYS") or pathlib.Path.home() / "pt-release-keys")
+DEFAULT_KEYS = pathlib.Path(os.environ.get("PT_RELEASE_KEYS") or pathlib.Path.home() / "pt-hdr-release-keys")
 SEED_NAME = "pt-release-ed25519.seed"
 PUBLIC_NAME = "pt-release-ed25519.pub"
 HEADER = REPO / "src" / "engine" / "platform" / "release_key.h"
 MANIFEST_NAME = "pt-update-manifest.json"
-PACKAGE_NAMES = {"windows": "P.T.PC.Port.Setup.exe", "linux": "P.T.PC.Port.Setup-linux"}
+PACKAGE_NAMES = {"windows": "P.T.PC.Port.1.0.8-HDR.Setup.exe", "linux": "P.T.PC.Port.Setup-linux"}
 
 # ---- Ed25519 (RFC 8032, section 5.1) ----
 P = 2**255 - 19

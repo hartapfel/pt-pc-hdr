@@ -21,6 +21,7 @@ struct AppSettings {
         bool hdr = false;
         int hdr_paper_white = 200;
         int hdr_peak = 0;
+        int hdr_sdr_eotf = 1; // 0 sRGB, 1 gamma 2.2, 2 gamma 2.4
         int letterbox = 0;
         std::string rendering_api = "vulkan";
         bool rendering_api_asked = false;
@@ -99,6 +100,16 @@ struct AppSettings {
         bool lens_ghosts = true;
         bool deband = false;
         float film_grain = 1.0f;
+        int film_grain_type = 1; // 0 Original, 1 Improved Perceptual (HDR5 compatibility).
+        int bloom_type = 1; // 0 Original, 1 Enhanced.
+        int flare_type = 1; // 0 Original, 1 Enhanced.
+        int lut_sampling = 1; // 0 Original, 1 Enhanced.
+        int shadow_toe = 1; // 0 Original, 1 Enhanced.
+        int post_sampling = 1; // 0 Original, 1 Enhanced.
+        int sharpening_type = 1; // 0 Original, 1 Enhanced.
+        float bloom_strength = 1.0f;
+        float flare_strength = 0.75f;
+        float ghost_strength = 1.0f;
         float clarity = 0.0f;
         int texture_detail = 1;
         int ray_quality = 1;

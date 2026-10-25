@@ -36,3 +36,7 @@ pt.log
 pt_imgui.ini
 installer/*/bin/
 installer/*/obj/
+
+# Local SDK/tool overrides and release reports
+/CMakeUserPresets.json
+/release-report/

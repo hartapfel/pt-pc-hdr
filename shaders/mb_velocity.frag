@@ -19,7 +19,9 @@ void main() {
     float z = ViewZ(v, depth);
     vec3 world = (v.inv_view * vec4(PixelNdc(v, gl_FragCoord.xy) * v.projection_param.xy * z, z, 1.0)).xyz;
     vec4 previous = pass.m * vec4(world, 1.0);
-    vec2 d = (uv - (previous.xy / previous.w * 0.5 + 0.5)) * pass.f0.xy;
+    vec2 d = vec2(0.0);
+    if (abs(previous.w) > 1e-5 && !any(isnan(previous)) && !any(isinf(previous)))
+        d = (uv - (previous.xy / previous.w * 0.5 + 0.5)) * pass.f0.xy;
     float d2 = dot(d, d);
     float len = Saturate(sqrt(d2));
     if (pass.f0.z > 0.0) {
@@ -27,5 +29,11 @@ void main() {
     }
     vec2 velocity = len == 0.0 ? vec2(0.0) : d * (len * inversesqrt(d2));
     vec4 object = ImgFetch(pass.ids.x, ivec2(gl_FragCoord.xy));
-    out_color = vec4(0.0, 0.0, object.x * (object.zw - (0.5 * velocity + 0.5)) + 0.5 * velocity + 0.5);
+    velocity=mix(velocity,object.zw,Saturate(object.x));
+    // Bound displacement by a rate, equally for camera and skinned objects.
+    // This is a safety radius, not an SDR colour clamp.
+    float combined=length(velocity);
+    if(pass.f0.z>0.0 && combined>pass.f0.z) velocity*=pass.f0.z/combined;
+    // Signed FP16 preserves small high-FPS velocities; biasing around 0.5 loses mantissa precision.
+    out_color = vec4(0.0, 0.0, velocity);
 }

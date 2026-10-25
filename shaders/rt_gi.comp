@@ -86,11 +86,11 @@ void main() {
         result = vec3(0.0);
     }
     float bright = Luma709(result) * v.exposure.x;
-    if (bright > 1.0) {
+    if (frame.hdr_output.x <= 0.5 && bright > 1.0) {
         result /= bright;
     }
     if (pass.f0.z > 0.5) {
         result = fract(world * 0.5);
     }
-    imageStore(rt_gi_raw, half_pixel, vec4(min(result, vec3(64.0)), travel));
+    imageStore(rt_gi_raw, half_pixel, vec4(SceneRadiance(result, 64.0, frame.hdr_output.x > 0.5), travel));
 }

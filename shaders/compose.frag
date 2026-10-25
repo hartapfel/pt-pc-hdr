@@ -36,7 +36,7 @@ void TppFog(vec3 eye, vec3 point, out vec3 inscatter, out float transmittance) {
     vec3 directional = ray.w * (mie.rgb * mie_phase + ray.rgb * rayleigh_phase) / max(vec3(1.0e-6), sigma);
     float opacity = 1.0 - exp(-depth);
     vec3 color = g1.rgb + directional * (1.0 - exp(-depth * sigma));
-    inscatter = clamp(color * opacity, 0.0, 1.0);
+    inscatter = SceneRadiance(max(color * opacity, vec3(0.0)), 1.0, frame.hdr_output.x > 0.5);
     transmittance = 1.0 - opacity;
 }
 
@@ -96,7 +96,12 @@ void main() {
         color = vec3(0.0);
     }
     float bloom_alpha = BloomAlpha(color);
-    if ((tpp & 2u) != 0u) {
+    // TppTonemap is enabled by default even in P.T., independently of TPP fog.
+    // Its per-channel shoulder asymptotes near SDR white (threshold 0.3,
+    // range 8). Applying it here destroys the highlight range of diffuse and
+    // specular lighting while later forward/emissive draws bypass it.
+    // HDR keeps scene radiance until the display shoulder in composite.frag.
+    if ((tpp & 2u) != 0u && frame.hdr_output.x <= 0.5) {
         color = TppShoulder(color);
     }
     out_color = vec4(color, bloom_alpha);

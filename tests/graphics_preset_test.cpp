@@ -17,7 +17,9 @@ int main(int argc,char** argv) {
     check("preset retains sound and microphone",s.voice.device=="test microphone" && s.audio.volume==.6f);
     check("Low detected",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Low);
     pt::ApplyGraphicsPreset(s,pt::GraphicsPreset::Original,true);
-    check("Original renderer defaults",s.graphics==pt::AppSettings{}.graphics && s.ray_tracing==pt::AppSettings{}.ray_tracing);
+    auto original = pt::AppSettings{}.graphics;
+    original.film_grain_type = 0; original.flare_strength = 1.0f;
+    check("Original renderer defaults and original grain",s.graphics==original && s.ray_tracing==pt::AppSettings{}.ray_tracing);
     check("Original detected",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Original);
     check("Original draws the flare ghosts",s.graphics.lens_ghosts);
     check("Original has no port dither (the PS4's output)",!s.graphics.deband);
@@ -25,20 +27,20 @@ int main(int argc,char** argv) {
     check("Original then contact shadows is Custom with the ghosts still on",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Custom && s.graphics.lens_ghosts);
     pt::ApplyGraphicsPreset(s,pt::GraphicsPreset::High,true);
     check("Low, High and Ultra keep the dither",[]{for(auto p:{pt::GraphicsPreset::Low,pt::GraphicsPreset::High,pt::GraphicsPreset::Ultra}){pt::AppSettings t;pt::ApplyGraphicsPreset(t,p,true);if(!t.graphics.deband) return false;}return true;}());
-    check("High leaves the flare ghosts out",!s.graphics.lens_ghosts && pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::High);
-    s.graphics.lens_ghosts=true;
+    check("High requested effects",s.graphics.lens_ghosts && s.graphics.ghost_strength==.25f && s.graphics.flare_strength==.5f && s.graphics.bloom_strength==1 && s.graphics.film_grain_type==1 && s.graphics.film_grain==.5f && pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::High);
+    s.graphics.lens_ghosts=true;s.graphics.ghost_strength=1;
     check("ghosts by hand make High Custom",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Custom);
-    s.graphics.lens_ghosts=false;
+    s.graphics.lens_ghosts=false;s.graphics.ghost_strength=0;
     pt::ApplyGraphicsPreset(s,pt::GraphicsPreset::Ultra,true);
     check("Ultra has every traced effect and fine detail",s.ray_tracing.shadows==2 && s.ray_tracing.reflections && s.ray_tracing.ambient_occlusion && s.ray_tracing.contact_shadows && s.graphics.ray_quality==4 && s.graphics.clarity==.4f);
     check("Ultra is path traced and keeps the Ultra tier parts set",s.ray_tracing.full_shadows && s.ray_tracing.bounce_light && s.ray_tracing.glossy_reflections);
-    check("Ultra preserves the complete cinematic effects",s.graphics.depth_of_field && s.graphics.motion_blur && s.graphics.bloom && s.graphics.lens_distortion && s.graphics.film_grain==1.0f);
+    check("Ultra preserves the complete cinematic effects",s.graphics.depth_of_field && s.graphics.motion_blur && s.graphics.bloom && s.graphics.lens_distortion && s.graphics.film_grain==.5f && s.graphics.film_grain_type==1 && s.graphics.ghost_strength==.25f && s.graphics.flare_strength==.5f && s.graphics.bloom_strength==1);
     check("Ultra detected",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Ultra);
-    s.graphics.bloom=false;
+    s.graphics.bloom=false;s.graphics.bloom_strength=0;
     check("manual change becomes Custom",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Custom);
     pt::ApplyGraphicsPreset(s,pt::GraphicsPreset::Ultra,false);
     check("unsupported RT retains raster fallback",s.ray_tracing==pt::AppSettings{}.ray_tracing && s.graphics.ambient_occlusion && s.graphics.reflections);
-    check("unsupported Ultra keeps cinematic effects",s.graphics.depth_of_field && s.graphics.motion_blur && s.graphics.bloom && s.graphics.lens_distortion && s.graphics.film_grain==1.0f);
+    check("unsupported Ultra keeps cinematic effects",s.graphics.depth_of_field && s.graphics.motion_blur && s.graphics.bloom && s.graphics.lens_distortion && s.graphics.film_grain==.5f && s.graphics.film_grain_type==1 && s.graphics.ghost_strength==.25f && s.graphics.flare_strength==.5f && s.graphics.bloom_strength==1);
     check("unsupported Ultra detected",pt::DetectGraphicsPreset(s,false)==pt::GraphicsPreset::Ultra);
     check("unsupported Ultra keeps the Ultra ray quality",s.graphics.ray_quality==3);
     {
@@ -74,15 +76,16 @@ int main(int argc,char** argv) {
             const auto at=text.find("lens_ghosts = ");if(at==std::string::npos) return false;
             text.erase(at,text.find('\n',at)+1-at);
             {std::ofstream out(path);out<<text;}
-            pt::AppSettings loaded;return pt::LoadAppSettings(path,loaded) && loaded.graphics.lens_ghosts==(preset==pt::GraphicsPreset::Original) &&
+            pt::AppSettings loaded;return pt::LoadAppSettings(path,loaded) && loaded.graphics.lens_ghosts==written.graphics.lens_ghosts &&
                    pt::DetectGraphicsPreset(loaded,true)==preset;
         };
-        check("missing lens_ghosts keeps High as High without ghosts",without_key(pt::GraphicsPreset::High));
+        check("missing legacy switch preserves High ghost intensity",without_key(pt::GraphicsPreset::High));
         check("missing lens_ghosts keeps Original with ghosts",without_key(pt::GraphicsPreset::Original));
         check("missing lens_ghosts keeps Ultra as Ultra",without_key(pt::GraphicsPreset::Ultra));
         const auto without_deband=[&](pt::GraphicsPreset preset,bool rt,bool custom,bool drop_ghosts){
             pt::AppSettings written;pt::ApplyGraphicsPreset(written,preset,rt);
             if(custom) written.graphics.bloom=!written.graphics.bloom;
+            written.graphics.bloom_strength=written.graphics.bloom?1:0;
             if(!pt::SaveAppSettings(path,written)) return false;
             std::string text;{std::ifstream in(path);std::stringstream ss;ss<<in.rdbuf();text=ss.str();}
             for(const char* key:{"deband = ","lens_ghosts = "}) {
@@ -103,10 +106,10 @@ int main(int argc,char** argv) {
         check("missing deband keeps a custom set with the dither",without_deband(pt::GraphicsPreset::Original,true,true,false));
         const auto before_full=[&](bool rt,bool custom){
             pt::AppSettings written;pt::ApplyGraphicsPreset(written,pt::GraphicsPreset::Ultra,rt);
-            if(custom) written.graphics.bloom=false;
+            if(custom) {written.graphics.bloom=false;written.graphics.bloom_strength=0;}
             if(!pt::SaveAppSettings(path,written)) return -1;
             std::string text;{std::ifstream in(path);std::stringstream ss;ss<<in.rdbuf();text=ss.str();}
-            {const auto at=text.find("ray_quality = ");if(at==std::string::npos) return -1;text.replace(at,text.find('\n',at)-at,"ray_quality = 2");}
+            {const auto at=text.find("\nray_quality = ") + 1;if(at==std::string::npos) return -1;text.replace(at,text.find('\n',at)-at,"ray_quality = 2");}
             for(const char* key:{"full_shadows = ","bounce_light = ","glossy_reflections = "}) {
                 const auto at=text.find(key);if(at==std::string::npos) return -1;
                 text.erase(at,text.find('\n',at)+1-at);
@@ -115,7 +118,7 @@ int main(int argc,char** argv) {
             pt::AppSettings loaded;if(!pt::LoadAppSettings(path,loaded)) return -1;
             return loaded.graphics.ray_quality*10+(pt::DetectGraphicsPreset(loaded,rt)==pt::GraphicsPreset::Ultra?1:0);
         };
-        check("an Ultra pt.ini from before Full reads as Ultra with Full",before_full(true,false)==31);
+        check("legacy Ultra keeps Ultra ray quality, distinct from the current path-traced preset",before_full(true,false)==30);
         check("a custom pt.ini from before Full reads as the new Ultra",before_full(true,true)==30);
         check("an Ultra pt.ini without ray tracing from before Full stays Ultra",before_full(false,false)==31);
     }

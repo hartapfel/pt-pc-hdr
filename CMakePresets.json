@@ -11,10 +11,21 @@
         "CMAKE_CXX_COMPILER": "clang-cl"
       }
     },
-    { "name": "debug", "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" } },
-    { "name": "release", "inherits": "base", "cacheVariables": {
-      "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-      "PT_REQUIRE_UPSCALERS": "ON"
-    } }
+    {
+      "name": "debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PT_REQUIRE_UPSCALERS": "ON",
+        "PT_OPENXR": "OFF"
+      }
+    }
   ]
 }

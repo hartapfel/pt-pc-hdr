@@ -21,8 +21,12 @@ void main() {
     if (draw.tint.a - dither.x < 0.0 || alpha - m.params.x * AlphaReference(m.flags, dither) < 0.0) {
         discard;
     }
+    if(abs(in_current.w)<1e-5 || abs(in_previous.w)<1e-5) {
+        out_color=vec4(1.0,0.0,0.0,0.0);
+        return;
+    }
     vec2 d = (in_current.xy / in_current.w - in_previous.xy / in_previous.w) * 0.5 * vec2(1920.0 / 128.0, 1080.0 / 128.0);
     float len = sqrt(dot(d, d));
     vec2 v = len > 0.0 ? d * (Saturate(len) / len) : vec2(0.0);
-    out_color = vec4(1.0, 0.0, 0.5 * v + 0.5);
+    out_color = vec4(1.0, 0.0, v);
 }

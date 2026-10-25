@@ -12,7 +12,7 @@ set "VSDIR=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
 set "PATH=%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0;C:\Program Files\Git\cmd;%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 if "%VULKAN_SDK%"=="" set "VULKAN_SDK=C:\VulkanSDK\1.4.357.0"
-set "PATH=C:\Program Files\LLVM\bin;%VULKAN_SDK%\Bin;%PATH%"
+set "PATH=C:\Program Files\CMake\bin;C:\Program Files\LLVM\bin;%VULKAN_SDK%\Bin;%PATH%"
 cd /d "%~dp0.." || exit /b 1
 set "BUILD_DIR=build\%BUILD_NAME%"
 set "SHARED="

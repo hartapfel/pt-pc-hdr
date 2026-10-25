@@ -1,6 +1,6 @@
 #version 460
 #include "common.glsl"
-
+#include "post_filter.glsl"
 layout(push_constant) uniform PassPush {
     uvec4 ids;
     vec4 f0;
@@ -8,38 +8,29 @@ layout(push_constant) uniform PassPush {
     vec4 f2;
     mat4 m;
 } pass;
+layout(location=0) in vec2 in_uv;
+layout(location=0) out vec4 out_color;
 
-layout(location = 0) in vec2 in_uv;
-layout(location = 0) out vec4 out_color;
-
-vec4 Tap(vec2 uv) {
-    return Img(pass.ids.x, SMP_LINEAR_CLAMP, uv);
-}
-
+// Signed CoC is carried separately in alpha. Select the near/far layer before
+// reducing resolution; never average foreground colour into the far layer.
 void main() {
-    vec2 t = pass.f2.zw;
-    vec2 p = gl_FragCoord.xy;
-    if (pass.ids.z == 0u) {
-        vec4 g = textureGather(sampler2D(images[pass.ids.x], samplers[SMP_LINEAR_CLAMP]), p * t, 3);
-        vec4 c = Tap(p * t);
-        float near = max(Saturate(0.5 - g.x) * 2.0, max(Saturate(0.5 - g.w) * 2.0, max(Saturate(0.5 - g.y) * 2.0, Saturate(0.5 - g.z) * 2.0)));
-        out_color = vec4(c.rgb, near);
-        return;
+    vec2 size=ImgSize(pass.ids.x);
+    ivec2 base=ivec2(floor(gl_FragCoord.xy*pass.f2.zw*size-0.5));
+    vec4 c[4];
+    float reference=pass.ids.z==0u ? 0.0 : 1.0;
+    for(int i=0;i<4;++i) {
+        c[i]=ImgFetch(pass.ids.x,clamp(base+ivec2(i&1,i>>1),ivec2(0),ivec2(size)-1));
+        c[i].rgb=SrgbDecode(max(c[i].rgb,vec3(0.0)));
+        reference=pass.ids.z==0u ? max(reference,c[i].a) : min(reference,c[i].a);
     }
-    if (pass.ids.z == 2u) {
-        vec2 q = p - 0.00390625;
-        vec4 s = Tap(vec2(t.x * q.x - 0.5 * t.x, t.y * q.y + 0.5 * t.y)) + Tap(t * q + 0.5 * t) + Tap(vec2(t.x * q.x + 0.5 * t.x, t.y * q.y - 0.5 * t.y)) +
-                 Tap(t * q - 0.5 * t) + Tap(t * q);
-        out_color = 0.2 * s;
-        return;
+    vec3 sum=vec3(0.0);float weights=0.0, coc=0.0;
+    for(int i=0;i<4;++i) {
+        // Bilateral in signed CoC pixels (AMD FidelityFX DoF prefilter principle).
+        float delta=(c[i].a-reference)*2.0*pass.f0.x;
+        float w=1.0/(1.0+delta*delta);
+        float amount=pass.ids.z==0u ? c[i].a : Saturate(1.0-2.0*c[i].a);
+        sum+=c[i].rgb*w*(pass.ids.z==0u ? 1.0 : amount);
+        coc+=amount*w; weights+=w;
     }
-    float a = 0.0;
-    for (int j = 0; j < 4; ++j) {
-        for (int i = 0; i < 4; ++i) {
-            a = max(a, Tap((p + vec2(0.5 * float(i) - 0.75, 0.5 * float(j) - 0.75)) * t).w);
-        }
-    }
-    vec3 c = Tap((p + vec2(-0.5, -0.5)) * t).rgb + Tap((p + vec2(0.5, -0.5)) * t).rgb + Tap((p + vec2(-0.5, 0.5)) * t).rgb +
-             Tap((p + vec2(0.5, 0.5)) * t).rgb;
-    out_color = vec4(0.25 * c, a);
+    out_color=vec4(sum/weights,coc/weights);
 }
