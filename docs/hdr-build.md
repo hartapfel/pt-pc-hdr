@@ -58,3 +58,6 @@ Configure shaderc with Clang/Ninja Release, `SHADERC_SKIP_TESTS=ON`, `SHADERC_SK
 
 This reproduces the source/build procedure, not a guarantee of byte-identical PE/ZIP output across timestamps, dependency servers, toolchain versions and signing keys. Release SHA-256 checksums identify the distributed artifacts; build provenance records the source commit and toolchain.
 
+
+The published upstream release script referenced two omitted helpers. This fork includes `tools/ci/portable_list.py` and `tools/ci/payload_index.py` to reproduce its portable manifest and signed range-update protocol. Run `python tests/test_release_packaging.py`; add `--setup <installer>` to verify every compressed payload range and SHA-256 against a real installer. The extractor restore uses the repository-scoped `installer/NuGet.Config`, also included in its corresponding-source archive.
+

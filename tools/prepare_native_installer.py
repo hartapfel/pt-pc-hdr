@@ -17,7 +17,8 @@ with zipfile.ZipFile(sourcezip,'w',zipfile.ZIP_DEFLATED) as z:
     for root,prefix in ((a.source,'LibOrbisPkg'),(REPO/'installer/Extractor','PT.PkgExtract')):
         for file in root.rglob('*'):
             if file.is_file() and not {'bin','obj','.git'}.intersection(file.relative_to(root).parts):z.write(file,prefix+'/'+file.relative_to(root).as_posix())
-    z.writestr('BUILD.txt','dotnet publish PT.PkgExtract/Extractor.csproj -c Release -r win-x64 --self-contained true -p:LibOrbisSource=<absolute LibOrbisPkg folder>. Library and wrapper are LGPL-3.0-or-later; the library DLL may be replaced. Changes: net10.0/modern SDK, fixed three-file root extraction, identity validation, safe output creation; PFSC decompression uses ReadExactly and chunked reads use the current chunk length. These read fixes are included in this corresponding source. No original game assets in this archive.\n')
+    z.write(REPO/'installer/NuGet.Config', 'PT.PkgExtract/NuGet.Config')
+    z.writestr('BUILD.txt','dotnet publish PT.PkgExtract/Extractor.csproj -c Release -r win-x64 --self-contained true -p:LibOrbisSource=<absolute LibOrbisPkg folder> -p:RestoreConfigFile=<absolute PT.PkgExtract/NuGet.Config>. Library and wrapper are LGPL-3.0-or-later; the library DLL may be replaced. Changes: net10.0/modern SDK, fixed three-file root extraction, identity validation, safe output creation; PFSC decompression uses ReadExactly and chunked reads use the current chunk length. These read fixes are included in this corresponding source. No original game assets in this archive.\n')
 files={}
 with zipfile.ZipFile(a.runtime) as z:
     for entry in z.infolist():
@@ -41,3 +42,4 @@ with (out/'payload.bin').open('wb') as f:
         encoded=name.encode();packed=zlib.compress(data,6);f.write(struct.pack('<H',len(encoded))+encoded+struct.pack('<QQ',len(data),len(packed))+hashlib.sha256(data).hexdigest().encode()+packed)
 (out/'payload-manifest.json').write_text(json.dumps({n:{'bytes':len(d),'sha256':hashlib.sha256(d).hexdigest()} for n,d in sorted(files.items())},indent=2))
 print(f'{len(files)} assets-free payload files; {(out/"payload.bin").stat().st_size/1024**2:.1f} MiB')
+
