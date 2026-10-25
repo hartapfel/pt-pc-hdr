@@ -4,7 +4,7 @@ An independent HDR fork of [LoreanXavier/pt-pc](https://github.com/LoreanXavier/
 
 ## Install
 
-Download **[P.T.PC.Port.1.0.8.1-HDR.Setup.exe](https://github.com/hartapfel/pt-pc-hdr/releases/latest)** from this fork's releases. A portable Windows ZIP and source archives are also provided. The installer includes the extraction helper and its LGPL corresponding source. Supply your own supported P.T. package or extracted game files, following the [original installation requirements](docs/installer.md). No original game archives, keys, saves or generated scene previews are included.
+Download the **[Windows installer](https://github.com/hartapfel/pt-pc-hdr/releases/latest)** from this fork's releases. A portable Windows ZIP and source archives are also provided. The installer includes the extraction helper and its LGPL corresponding source. Supply your own supported P.T. package or extracted game files, following the [original installation requirements](docs/installer.md). No original game archives, keys, saves or generated scene previews are included.
 
 Enable HDR on your OS and the game's HDR output, then set HDR peak brightness, HDR game brightness and HDR UI brightness for your display. Existing settings are preserved; select High or Ultra to apply the new effect defaults. Report fork-specific issues [here](https://github.com/hartapfel/pt-pc-hdr/issues).
 
@@ -17,7 +17,7 @@ Enable HDR on your OS and the game's HDR output, then set HDR peak brightness, H
 - Clearer HDR calibration labels and ordering; the SDR brightness screen cannot change HDR grading.
 - SDR and HDR share the same smooth shadow curve. SDR retains its original brightness slider; HDR uses neutral scene response independently of that slider.
 
-Existing settings are preserved. HDR fork releases use `<upstream version>.<fork revision>-hdr`; the initial `1.0.8-hdr` is revision zero. Updates come from this fork and retain its signing key. The legacy `P.T.PC.Port.1.0.8-HDR.Setup.exe` asset is an identical compatibility copy of the latest versioned installer, required by old clients.
+Existing settings are preserved. HDR fork releases use `<upstream version>.<fork revision>-hdr`; the initial `1.0.8-hdr` is revision zero. Updates come from this fork and retain its signing key. Each release presents one Windows installer labeled with its current version. Its download filename remains `P.T.PC.Port.1.0.8-HDR.Setup.exe` because existing clients require it; the installed version follows the release tag.
 
 ## Changes from official 1.0.8
 

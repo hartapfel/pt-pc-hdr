@@ -24,7 +24,7 @@ prereleases, release tags other than numeric versions (optionally followed by `-
 | Apple silicon | `P.T.PC.Port-macOS-arm64.zip` |
 | Intel Mac | `P.T.PC.Port-macOS-x64.zip` |
 
-The Windows asset name above is a stable compatibility identifier, not the installed version. Every HDR release retains it and offers an identical installer with the current version in its filename. Release tags, embedded executable/setup versions and signed manifest versions must agree. Fork revisions use `1.0.8.1-hdr`, `1.0.8.2-hdr`, etc.; the already-published checker compares the fourth numeric component correctly. Never rotate the fork signing key for a routine release.
+The Windows asset name above is a stable compatibility identifier, not the installed version. Every HDR release retains it and displays a GitHub asset label with the current version. Only one installer is published. Release tags, embedded executable/setup versions and signed manifest versions must agree. Fork revisions use `1.0.8.1-hdr`, `1.0.8.2-hdr`, etc.; the already-published checker compares the fourth numeric component correctly. Never rotate the fork signing key for a routine release.
 
 Windows portable ZIPs remain available as an additional download, but the notification points to the installer. If the matching
 asset is not present yet (for example, while the macOS workflow is building), the notice points to the release page. Custom Linux
