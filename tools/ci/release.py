@@ -187,7 +187,7 @@ def publish_extractor(runtime_id: str) -> pathlib.Path:
     if extractor.exists():
         shutil.rmtree(extractor)
     run(f"publish extractor {runtime_id}", ["dotnet", "publish", REPO / "installer" / "Extractor" / "Extractor.csproj", "-c", "Release", "-r",
-                                            runtime_id, "--self-contained", "true", f"-p:LibOrbisSource={source}", "-o", extractor])
+                                            runtime_id, "--self-contained", "true", f"-p:LibOrbisSource={source}", f"-p:RestoreConfigFile={REPO / 'installer' / 'NuGet.Config'}", "-o", extractor])
     return extractor
 
 
@@ -214,6 +214,8 @@ if not a.linux_only:
         argv, env = build(target)
         if index == 0:
             env["PT_CMAKE_ARGS"] = env.get("PT_CMAKE_ARGS", "") + " " + release_cache
+        else:
+            env.pop("PT_CMAKE_ARGS", None)
         run(f"build {target}", argv, env=env)
     cache = (BUILD / "CMakeCache.txt").read_text(errors="replace")
     if "PT_GAMEPLUS:BOOL=ON" not in cache:
@@ -338,3 +340,4 @@ else:
 report["release_page"] = f"{GITHUB_REPO}/releases/tag/v{a.version}"
 report["notes"] = a.notes
 finish(0)
+
