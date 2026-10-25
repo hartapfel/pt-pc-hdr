@@ -7,7 +7,7 @@ int main() {
     int failures = 0;
     const auto expect = [&](const char* locale, bool subtitles, int language) {
         const GameOptions o = DefaultOptionsForLocale(locale);
-        const bool ok = o.subtitles == subtitles && o.subtitle_language == language && o.brightness == 5 && o.BrightnessValue() == 1.0f && !o.invert_x && !o.invert_y;
+        const bool ok = o.subtitles == subtitles && o.subtitle_language == language && o.brightness == 5 && o.BrightnessValue() == 0.84f && !o.invert_x && !o.invert_y;
         std::printf("%s: subtitles %d language %d: %s\n", locale, o.subtitles, o.subtitle_language, ok ? "PASS" : "FAIL");
         failures += !ok;
     };
@@ -52,7 +52,7 @@ int main() {
     const float high = options.BrightnessValue();
     options.brightness = 10;
     calibration &= high == options.BrightnessValue() && high > 1.0f;
-    std::printf("SDR calibration is monotone, bounded and centered on neutral: %s\n", calibration ? "PASS" : "FAIL");
+    std::printf("SDR calibration retains its original midpoint and bounded monotone steps: %s\n", calibration ? "PASS" : "FAIL");
     failures += !calibration;
     return failures ? 1 : 0;
 }

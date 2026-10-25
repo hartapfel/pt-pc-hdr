@@ -215,12 +215,12 @@ other spatial/temporal effects, or when display calibration differs.
 
 The cross-mode GPU ramp passes on Vulkan and D3D12. Maximum smooth-toe RGB
 difference is 5.21540642e-8 (original toe: 6.70552254e-8), with exact zero black.
-An independent difference existed after this curve: the saved SDR brightness
-midpoint (5/10) mapped to 0.84, while HDR correctly bypasses SDR calibration
-with 1.0. SDR now normalizes the existing calibration table by its midpoint,
-making 5/10 exactly 1.0 and retaining relative step ratios and clamped endpoints.
-This is an intentional presentation change: saved positions remain intact but
-SDR brightness response changes. HDR output, EOTF and calibration stay intact.
-The default options test verifies neutral midpoint, monotonicity and endpoints.
-For comparisons, use SDR brightness at the midpoint (5/10), not the old neutral
-position (7/10). SDR's original limited highlight range remains unchanged.
+The original SDR brightness slider is deliberately preserved: its default
+midpoint (5/10) maps to 0.84 and its neutral position (7/10) maps to 1.0. HDR
+uses neutral response (1.0), independent of the SDR slider and its saved value.
+No additional shadow transform is applied to either mode.
+The options regression verifies the original midpoint and monotone, clamped
+steps. For a neutral SDR/HDR range comparison use SDR brightness 7/10, Original
+HDR grading, and matched display white/EOTF; otherwise SDR correctly reflects
+the user's brightness choice. Neither switching HDR nor selecting a grading
+preset rewrites that saved SDR choice.
