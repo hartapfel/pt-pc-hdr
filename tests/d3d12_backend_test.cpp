@@ -1648,8 +1648,8 @@ bool HdrComposeRun(gpu::Device& dev) {
     for (const auto& v : post_result) ok = ok && std::abs(v.r - 2.f) < .001f;
     dev.DestroyImage(checker);
     if (!ok) std::printf("HDR7 failed stage: prior post\n");
-    // Dense shadow ramp through the production bloom/toe pass, in both modes.
-    // Input is scene-linear; expected curve is defined in the encoded domain.
+    // Render the same scene-linear shadow ramp through the actual SDR and HDR
+    // tonemap branches. Both must use the same toe; only highlight range differs.
     Texture dark; dark.width=width; dark.height=1; dark.format=gpu::Format::R32G32B32A32Sfloat;
     dark.levels.emplace_back(width*sizeof(glm::vec4));
     auto decode=[](float x) { return x<=.04045f ? x/12.92f : std::pow((x+.055f)/1.055f,2.4f); };
@@ -1661,20 +1661,32 @@ bool HdrComposeRun(gpu::Device& dev) {
     ok=runner.Upload(dark,dark_image) && ok; bind_image(gpu::kImgHdr,dark_image);
     for (int toe=0;toe<2 && ok;++toe) {
         static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=float(toe);
-        gpu::PassPush p; p.f0=glm::vec4(0,1,1,0); p.f1.y=1;
-        ok=draw_post("tonemap.frag",p,1,&post_result) && ok;
-        float previous=-1;
-        for(uint32_t x=0;x<width && ok;++x) {
-            const float c=.1f*x/(width-1), k=std::sqrt(1.f/512.f);
-            float expected=c*c/std::max(c,k);
-            if(toe && c>.5f*k) {
-                float t=std::clamp((c-.5f*k)/k,0.f,1.f);
-                expected=c-.25f*k*(1-t*t*(3-2*t));
+        std::vector<glm::vec4> sdr_shadow;
+        float max_difference=0;
+        for (int hdr=0;hdr<2 && ok;++hdr) {
+            gpu::PassPush p; p.f0=glm::vec4(0,1,1,0); p.f1.y=float(hdr);
+            ok=draw_post("tonemap.frag",p,hdr,&post_result) && ok;
+            float previous=-1;
+            for(uint32_t x=0;x<width && ok;++x) {
+                const float c=.1f*x/(width-1), k=std::sqrt(1.f/512.f);
+                float expected=c*c/std::max(c,k);
+                if(toe && c>.5f*k) {
+                    float t=std::clamp((c-.5f*k)/k,0.f,1.f);
+                    expected=c-.25f*k*(1-t*t*(3-2*t));
+                }
+                for(int channel=0;channel<3;++channel) {
+                    ok=ok && std::abs(post_result[x][channel]-expected)<2e-6f;
+                    if(hdr) max_difference=std::max(max_difference,std::abs(post_result[x][channel]-sdr_shadow[x][channel]));
+                }
+                ok=ok && post_result[x].x>=previous;
+                previous=post_result[x].x;
             }
-            ok=std::abs(post_result[x].x-expected)<2e-6f && post_result[x].x>=previous;
-            previous=post_result[x].x;
+            ok=ok && post_result[0].x==0;
+            if(!hdr) sdr_shadow=post_result;
         }
-        ok=ok && post_result[0].x==0;
+        ok=ok && max_difference<2e-6f;
+        std::printf("SDR/HDR %s shadow parity: max encoded RGB difference %.9g (%u samples)\n",
+                    toe ? "smooth" : "original",max_difference,width);
     }
     static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=0;
     dev.DestroyImage(dark_image);

@@ -15,6 +15,7 @@ Enable HDR on your OS and the game's HDR output, then set HDR peak brightness, H
 - Exposure, contrast, highlights, shadows, saturation, highlight saturation and Blowout controls; 100% Blowout is grayscale.
 - See-through settings preview across Graphics, including inactive sliders under Path Tracing; a toggle restores the opaque menu.
 - Clearer HDR calibration labels and ordering; the SDR brightness screen cannot change HDR grading.
+- SDR shares the HDR shadow curve and now uses a neutral brightness midpoint, removing the old default darkening for fair SDR/HDR comparisons. Saved slider positions are retained; SDR calibration response changes.
 
 Existing settings are preserved. HDR fork releases use `<upstream version>.<fork revision>-hdr`; the initial `1.0.8-hdr` is revision zero. Updates come from this fork and retain its signing key. The legacy `P.T.PC.Port.1.0.8-HDR.Setup.exe` asset is an identical compatibility copy of the latest versioned installer, required by old clients.
 

@@ -36,7 +36,9 @@ T Get(const std::vector<uint8_t>& buffer, size_t offset) {
 }
 
 float GameOptions::BrightnessValue() const {
-    return kBrightness[std::clamp(brightness, 0, 10)];
+    // The default midpoint must preserve the shared SDR/HDR shadow curve.
+    // Retain the relative calibration steps without the old 0.84 baseline bias.
+    return kBrightness[std::clamp(brightness, 0, 10)] / kBrightness[5];
 }
 
 GameOptions DefaultOptionsForLocale(std::string_view locale) {

@@ -188,3 +188,39 @@ pt-pc-hdr-work/color-grading-v3. Nothing has been published.
 Iteration-3 native menu runs pass 53 expectations each. Installer integrity,
 self-test and all 559 embedded payload sizes/hashes pass. The prior local
 installers and installed game are unchanged.
+
+## SDR/HDR comparison: shared shadow curve
+
+The smooth shadow toe already applies to both output modes: `ScreenTonemap`
+(SDR) and `ScreenTonemapHdr` call the same `ShadowToe` with the same
+`graphics.shadow_toe` value, independently of HDR enablement. Defaults and
+legacy-settings migration enable the smooth curve in both modes. The 64-cube
+float LUT and tetrahedral sampling quality are also shared. Applying another
+shadow correction to SDR would apply the adjustment twice.
+
+The backend regression now renders an identical 256-sample scene-linear dark
+ramp through both production tonemap branches, checking RGB agreement, black,
+monotonicity and the analytic toe for both original and smooth quality. Bloom
+and flares are zero to isolate the shadow curve from differing highlight energy.
+
+For a neutral comparison, use the Original HDR color preset, neutral SDR
+brightness, the same exposure/camera/effects, and match HDR game brightness to
+the SDR display's measured white. Choose SDR EOTF emulation to match that
+display's response (Gamma 2.2 remains the default). HDR look intentionally
+changes saturation and highlights and is unsuitable for an otherwise neutral
+range comparison. This proves shared shadow treatment; it does not claim
+pixel-identical scenes when HDR highlight energy affects bloom, exposure or
+other spatial/temporal effects, or when display calibration differs.
+
+
+The cross-mode GPU ramp passes on Vulkan and D3D12. Maximum smooth-toe RGB
+difference is 5.21540642e-8 (original toe: 6.70552254e-8), with exact zero black.
+An independent difference existed after this curve: the saved SDR brightness
+midpoint (5/10) mapped to 0.84, while HDR correctly bypasses SDR calibration
+with 1.0. SDR now normalizes the existing calibration table by its midpoint,
+making 5/10 exactly 1.0 and retaining relative step ratios and clamped endpoints.
+This is an intentional presentation change: saved positions remain intact but
+SDR brightness response changes. HDR output, EOTF and calibration stay intact.
+The default options test verifies neutral midpoint, monotonicity and endpoints.
+For comparisons, use SDR brightness at the midpoint (5/10), not the old neutral
+position (7/10). SDR's original limited highlight range remains unchanged.

@@ -1,3 +1,5 @@
+// Shared SDR/HDR shadow treatment. hdr_output.z selects toe quality,
+// independently of hdr_output.x (output range). Do not apply the toe twice.
 vec3 ShadowToe(vec3 x, bool smooth_toe) {
     const float knee = 0.04419417382415922; // sqrt(1/512), in encoded space.
     vec3 original = x*x / max(vec3(knee), x);

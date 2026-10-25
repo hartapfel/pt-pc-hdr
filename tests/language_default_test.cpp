@@ -7,7 +7,7 @@ int main() {
     int failures = 0;
     const auto expect = [&](const char* locale, bool subtitles, int language) {
         const GameOptions o = DefaultOptionsForLocale(locale);
-        const bool ok = o.subtitles == subtitles && o.subtitle_language == language && o.brightness == 5 && !o.invert_x && !o.invert_y;
+        const bool ok = o.subtitles == subtitles && o.subtitle_language == language && o.brightness == 5 && o.BrightnessValue() == 1.0f && !o.invert_x && !o.invert_y;
         std::printf("%s: subtitles %d language %d: %s\n", locale, o.subtitles, o.subtitle_language, ok ? "PASS" : "FAIL");
         failures += !ok;
     };
@@ -36,5 +36,23 @@ int main() {
     expect("zh-TW", true, 0);
     expect("zh-Hant-HK", true, 0);
     expect("", true, 0);
+    GameOptions options;
+    float previous = 0.0f;
+    bool calibration = true;
+    for (int step = 0; step <= 10; ++step) {
+        options.brightness = step;
+        calibration &= options.BrightnessValue() > previous;
+        previous = options.BrightnessValue();
+    }
+    options.brightness = -1;
+    const float low = options.BrightnessValue();
+    options.brightness = 0;
+    calibration &= low == options.BrightnessValue() && low < 1.0f;
+    options.brightness = 11;
+    const float high = options.BrightnessValue();
+    options.brightness = 10;
+    calibration &= high == options.BrightnessValue() && high > 1.0f;
+    std::printf("SDR calibration is monotone, bounded and centered on neutral: %s\n", calibration ? "PASS" : "FAIL");
+    failures += !calibration;
     return failures ? 1 : 0;
 }
