@@ -42,6 +42,7 @@ sys.path.insert(0, str(REPO / "tools" / "ci"))
 BUILD = REPO / "build" / "release"
 # the public release page (docs/updates.md)
 GITHUB_REPO = "https://github.com/hartapfel/pt-pc-hdr"
+# Compatibility protocol name: embedded in the first public HDR updater and its signed manifest.
 SETUP_NAME = "P.T.PC.Port.1.0.8-HDR.Setup.exe"
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -250,7 +251,7 @@ if not a.linux_only:
     report["installer"] = str(dest / SETUP_NAME)
     # the portable zip as a release file of its own (issue #8): the same runtime the installer carries, for an already
     # extracted CUSA01127 folder; its data folder is made next to pt.exe at the first start
-    portable = dest / "P.T.PC.Port.1.0.8-HDR-portable-windows.zip"
+    portable = dest / f"P.T.PC.Port.{a.version.removesuffix('-hdr')}-HDR-portable-windows.zip"
     shutil.copy2(runtime, portable)
     add_extractor(portable, extractor, REPO / "dump" / "installer-20261002" / "native" / "extractor-source.zip", source / "LICENSE.txt")
     # a portable copy updates itself from this setup's signed list (docs/updates.md, "Portable copies"): the zip holds exactly the
@@ -330,6 +331,12 @@ if packages:
     report["update_manifest"] = f"embedded in {', '.join(p.name for p in packages.values())} ({len(data)} bytes)"
     for leftover in ("pt-update-manifest.json", "pt-update-manifest.json.sig"):
         (dest / leftover).unlink(missing_ok=True)
+# Keep the old updater protocol name; offer an identical, versioned manual download.
+if not a.linux_only and (dest / SETUP_NAME).is_file():
+    versioned_setup = dest / f"P.T.PC.Port.{a.version.removesuffix('-hdr')}-HDR.Setup.exe"
+    if versioned_setup != dest / SETUP_NAME:
+        shutil.copy2(dest / SETUP_NAME, versioned_setup)
+        report["files"].append(str(versioned_setup))
 # GitHub release metadata supplies updates. Only platform packages are published.
 if a.legacy_update_manifest:
     from legacy_update_manifest import write_manifest

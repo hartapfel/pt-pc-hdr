@@ -12,6 +12,7 @@ using glm::mat3;
 using glm::all;
 using glm::lessThanEqual;
 using glm::max;
+float min(double a, double b) { return float(std::min(a, b)); }
 using glm::abs;
 vec3 operator*(vec3 v, double scale) { return v * float(scale); }
 vec3 operator*(double scale, vec3 v) { return float(scale) * v; }
@@ -101,5 +102,16 @@ int main() {
     check(blends, "HDR10 UI recomposes to the shown PQ frame across 1331 colours");
     check(bounded, "HDR10 UI alpha is valid and premultiplied colour stays nonnegative");
     check(CompositeUiLayer(base, base, 1.5f / 1023).a == 0, "unchanged HDR10 pixels have zero UI alpha");
+    bool signed_blends = true;
+    for (const vec3 scene : {vec3(3,-.1f,-.05f), vec3(-.1f,2,-.02f), vec3(-.2f,-.1f,4)}) {
+        for (float alpha : {0.0f,.01f,.25f,.5f,1.0f}) {
+            for (const vec3 ink : {vec3(0),vec3(2.5f),vec3(3,-.1f,-.05f)}) {
+                const vec3 shown = scene*(1-alpha)+ink*alpha;
+                const vec4 layer = CompositeUiLayer(shown,scene,.0001f,1.0f);
+                signed_blends &= near(vec3(layer)+(1-layer.a)*scene,shown) && layer.a>=0 && layer.a<=1;
+            }
+        }
+    }
+    check(signed_blends, "wide scRGB UI layer reconstructs signed scene and translucent UI without a BT709 clamp");
     return failures ? 1 : 0;
 }

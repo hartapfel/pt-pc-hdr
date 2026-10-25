@@ -1,7 +1,7 @@
 // Lilium luminance RCAS, adapted from RenoDX's Crimson Desert / Alien Isolation.
 // Based on AMD FidelityFX RCAS, Copyright (c) 2024 Advanced Micro Devices, Inc.
 // MIT; see docs/hdr-post-licenses.txt. All inputs are display-linear BT.709.
-vec3 HdrRcas(vec3 e, vec3 b, vec3 d, vec3 f, vec3 h, float strength, float peak) {
+vec3 HdrRcas(vec3 e, vec3 b, vec3 d, vec3 f, vec3 h, float strength, float peak, float wide) {
     if (strength <= 0.0) return e;
     vec3 weights = vec3(0.2126, 0.7152, 0.0722) / max(peak, 1.0);
     float ey = max(dot(e, weights), 0.0);
@@ -18,6 +18,6 @@ vec3 HdrRcas(vec3 e, vec3 b, vec3 d, vec3 f, vec3 h, float strength, float peak)
     float sharpened = (dot(ring, vec4(lobe)) + ey) / (4.0 * lobe + 1.0);
     float gain = clamp(sharpened / ey, 0.0, 4.0);
     // Luminance bounds alone cannot protect saturated RGB channels.
-    gain = min(gain, peak / max(max(e.r, max(e.g, e.b)), 1e-8));
+    gain = min(gain, peak / max(GamutPeak(e, wide), 1e-8));
     return e * gain;
 }

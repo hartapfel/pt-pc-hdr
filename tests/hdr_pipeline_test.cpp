@@ -13,11 +13,11 @@ int main() {
     using namespace pt;
     vk::Context ctx;
     if (!ctx.Init(nullptr, false)) return 2;
-    constexpr uint32_t width = 18;
+    constexpr uint32_t width = 19;
     constexpr uint32_t bytes = width * sizeof(glm::vec4);
     const std::array<glm::vec3, width> scene{{{0, 0, 0}, {.01f, .01f, .01f}, {.18f, .18f, .18f},
         {1, 1, 1}, {10, 2, 1}, {20, 4, 2}, {.2f, .4f, .6f}, {1000, 1000, 1000},
-        {.00001f, .001f, .0031308f}, {.003f, .0032f, .004f}, {.0001f, .0002f, .0003f}, {1000, 1000, 1000}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {1000,1000,1000}}};
+        {.00001f, .001f, .0031308f}, {.003f, .0032f, .004f}, {.0001f, .0002f, .0003f}, {1000, 1000, 1000}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {.2f,.4f,.6f}, {1e11f,2e10f,1e10f}, {1000,1000,1000}}};
     std::array<glm::vec4, width> encoded{}, top{};
     for (uint32_t i = 0; i < width; ++i) {
         for (int c = 0; c < 3; ++c) {
@@ -72,7 +72,7 @@ int main() {
     set_info.bindingCount = 3; set_info.pBindings = bindings.data();
     VkDescriptorSetLayout set_layout;
     if (vkCreateDescriptorSetLayout(ctx.device, &set_info, nullptr, &set_layout) != VK_SUCCESS) return 2;
-    VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 80};
+    VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
     VkPipelineLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     layout_info.setLayoutCount = 1; layout_info.pSetLayouts = &set_layout;
     layout_info.pushConstantRangeCount = 1; layout_info.pPushConstantRanges = &range;
@@ -108,7 +108,8 @@ int main() {
     }
     int failures = 0;
     for (float paper_white : {200.0f, 400.0f}) {
-    for (int effect = 0; effect < 5; ++effect) {
+    std::array<std::array<glm::vec3,width>,18> blowout_reference{};
+    for (int effect = 0; effect < 15; ++effect) {
     for (float eotf : {0.0f, 1.0f, 2.0f}) {
       for (float output_mode : {1.0f, 2.0f}) {
         for (float peak_nits : {400.0f, 1000.0f, 2000.0f}) {
@@ -119,14 +120,29 @@ int main() {
             double grain_mean = 0.0, grain_square = 0.0;
             for (int seed = 0; seed < seeds; ++seed) {
             ctx.Submit([&](VkCommandBuffer cmd) {
-                std::array<float, 20> push{};
+                std::array<float, 32> push{};
                 push[0] = eotf; push[1] = brightness;
                 push[15] = output_mode; push[16] = paper_white; push[17] = peak_nits;
                 push[18] = push[19] = 1.0f;
-                push[8] = effect >= 2 ? 1.0f : 0.0f; push[10] = 1.0f;
+                push[8] = effect >= 2 && effect <= 4 ? 1.0f : 0.0f; push[10] = 1.0f;
                 push[9] = effect == 2 ? 2.0f : effect == 4 ? 1.0f : 0.0f;
                 push[11] = effect == 1 ? 1.0f : 0.0f;
                 push[12] = seed * .137f; push[13] = seed * .291f;
+                if (effect >= 5) {
+                    push[20] = effect == 7 ? 1.0f : 0.0f;
+                    push[21] = push[22] = push[23] = push[25] = push[27] = 1.0f;
+                    push[24] = 2.0f;
+                    push[26] = effect == 6 ? 0.0f : 1.0f;
+                    push[11] = effect == 7 ? 1.0f : 0.0f;
+                    push[8] = effect == 7 ? 1.0f : 0.0f;
+                    push[9] = 2.0f;
+                    if (effect >= 12) { push[24]=1; push[28]=float(effect-12)*.5f; }
+                    if (effect == 8) { push[20]=-4; push[21]=0; push[22]=0; push[23]=2; push[24]=0; push[25]=0; }
+                    if (effect == 9) { push[20]=4; push[21]=2; push[22]=2; push[23]=0; push[25]=2; }
+                    if (effect == 10) { push[20]=4; push[21]=0; push[22]=0; push[23]=2; push[25]=0; }
+                    if (effect == 11) { push[20]=-4; push[21]=2; push[22]=2; push[23]=0; push[25]=2; }
+
+                }
                 for (uint32_t stage = 0; stage < 2; ++stage) {
                     RenderTarget* target = stage ? &output : &intermediate;
                     UseTargets(cmd, {{target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
@@ -150,10 +166,36 @@ int main() {
             vmaInvalidateAllocation(ctx.allocator, readback.allocation, 0, bytes);
             const auto* actual = static_cast<const glm::vec4*>(readback.mapped);
             for (uint32_t i = 0; i < width; ++i) {
+                if (effect >= 5) {
+                    glm::vec3 rgb = output_mode == 1.0f ? glm::vec3(actual[i])*80.0f :
+                        glm::inverse(glm::mat3(.627404f,.069097f,.0163916f,.329283f,.919540f,.0880132f,.0433136f,.0113612f,.895595f)) *
+                        glm::vec3(render::PqDecodeNits(actual[i].r),render::PqDecodeNits(actual[i].g),render::PqDecodeNits(actual[i].b));
+                    if (effect >= 12) {
+                        const int key=int(eotf)*6+(int(output_mode)-1)*3+(peak_nits==400?0:peak_nits==1000?1:2);
+                        if (effect==12) blowout_reference[key][i]=rgb;
+                        else if (i != width-1) {
+                            const auto before=blowout_reference[key][i];
+                            const float y=glm::dot(before,glm::vec3(.2126f,.7152f,.0722f));
+                            const auto expected=glm::mix(before,glm::vec3(y),float(effect-12)*.5f);
+                            for(int c=0;c<3;++c) ok &= std::abs(rgb[c]-expected[c])<std::max(.015f,std::abs(expected[c])*.008f);
+                        }
+                    }
+                    const glm::vec3 target = effect == 6 ? rgb : glm::mat3(.822461969f,.033194199f,.017082631f,
+                        .177538031f,.966805801f,.072397441f,0,0,.910519929f)*rgb;
+                    for (int c=0;c<3;++c) {
+                        ok &= std::isfinite(target[c]) && target[c] >= -.15f && target[c] <= peak_nits*1.004f;
+                        if (i==0) ok &= std::abs(rgb[c]) < .0001f;
+                        if (i==width-1) ok &= std::abs(rgb[c]-paper_white) < paper_white*.004f;
+                    }
+                    if ((effect == 5 || effect == 7) && output_mode==1.0f && i==4)
+                        ok &= rgb.g < 0.0f || rgb.b < 0.0f; // Wide color survived both transfers and FP16.
+                    ok &= actual[i].a==1.0f;
+                    continue;
+                }
                 const auto decode = [&](float v) { return eotf > .5f ? std::pow(v, eotf > 1.5f ? 2.4f : 2.2f) : v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f); };
                 const auto encode = [&](float v) { return eotf > .5f ? std::pow(v, 1.f / (eotf > 1.5f ? 2.4f : 2.2f)) : v <= .0031308f ? v * 12.92f : 1.055f * std::pow(v, 1.f / 2.4f) - .055f; };
                 glm::vec3 expected;
-                for (int c = 0; c < 3; ++c) expected[c] = decode(std::pow(encoded[i][c], 1.f / brightness));
+                for (int c = 0; c < 3; ++c) expected[c] = decode(std::min(std::pow(encoded[i][c], 1.f / brightness),65504.f));
                 const float m = std::max({expected.r, expected.g, expected.b});
                 if (m > 0.0f) expected *= render::HdrShoulder(m, peak_nits / paper_white) / m;
                 if (effect >= 3 && i == 2) {

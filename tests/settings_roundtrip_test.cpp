@@ -60,6 +60,57 @@ int main(int argc, char** argv) {
     const std::filesystem::path ini = dir / "roundtrip.ini";
 
     Check("defaults", Same(RoundTrip(ini, {}), {}));
+    {
+        pt::AppSettings chosen;
+        chosen.display.hdr_ui_brightness = 120;
+        chosen.display.hdr_menu_preview = false;
+        chosen.display.hdr_color = {1.2f, 1.1f, 0.7f, 1.3f, 1.5f, 0.6f, false, .75f};
+        const auto loaded = RoundTrip(ini, chosen).display;
+        Check("HDR grade and independent UI brightness persist", loaded.hdr_ui_brightness == 120 && !loaded.hdr_menu_preview &&
+            !loaded.hdr_color.wide_gamut && Near(loaded.hdr_color.blowout,.75f) && Near(loaded.hdr_color.exposure, 1.2f) && Near(loaded.hdr_color.contrast,1.1f) &&
+            Near(loaded.hdr_color.highlights,.7f) && Near(loaded.hdr_color.shadows,1.3f) &&
+            Near(loaded.hdr_color.saturation,1.5f) && Near(loaded.hdr_color.highlight_saturation,.6f));
+        const auto old = LoadText(ini,"[display]\nhdr_paper_white=300\n").display;
+        Check("legacy UI brightness migration and neutral defaults",old.hdr_ui_brightness==300 && old.hdr_sdr_eotf==1 &&
+            old.hdr_color.wide_gamut && old.hdr_color.saturation==1 && old.hdr_color.exposure==0);
+        const auto bad = LoadText(ini,"[display]\nhdr_ui_brightness=9999\nhdr_exposure=nan\nhdr_contrast=-10\nhdr_saturation=inf\nhdr_highlights=5\nhdr_shadows=-1\n").display;
+        Check("invalid HDR grades are finite and bounded",bad.hdr_ui_brightness==500 && bad.hdr_color.exposure==0 &&
+            bad.hdr_color.contrast==0 && bad.hdr_color.saturation==1 && bad.hdr_color.highlights==2 && bad.hdr_color.shadows==0);
+    }
+    {
+        pt::AppSettings endpoints;
+        endpoints.display.hdr_color = {-4,0,2,0,2,0,true,1};
+        const auto c = RoundTrip(ini,endpoints).display.hdr_color;
+        Check("grade endpoints and blowout survive persistence",c.contrast==0 && c.highlights==2 && c.shadows==0 && c.saturation==2 && c.highlight_saturation==0 && c.blowout==1);
+    }
+    {
+        pt::AppSettings settings;
+        auto& grade = settings.display.hdr_color;
+        Check("new HDR grade defaults to Original with wide gamut", grade.Preset()==pt::HdrColorPreset::Original && grade.wide_gamut);
+        settings.display.hdr_ui_brightness=120;
+        settings.display.hdr_paper_white=300;
+        grade.ApplyPreset(pt::HdrColorPreset::HdrLook);
+        Check("HDR look sets exact grading and preserves calibration",grade.Preset()==pt::HdrColorPreset::HdrLook &&
+            Near(grade.highlights,1.45f) && Near(grade.saturation,1.5f) && grade.wide_gamut &&
+            settings.display.hdr_ui_brightness==120 && settings.display.hdr_paper_white==300);
+        Check("HDR look detected after settings round trip",RoundTrip(ini,settings).display.hdr_color.Preset()==pt::HdrColorPreset::HdrLook);
+        for (float pt::HdrColorSettings::* field : {&pt::HdrColorSettings::exposure,&pt::HdrColorSettings::contrast,
+             &pt::HdrColorSettings::highlights,&pt::HdrColorSettings::shadows,&pt::HdrColorSettings::saturation,
+             &pt::HdrColorSettings::highlight_saturation,&pt::HdrColorSettings::blowout}) {
+            grade.ApplyPreset(pt::HdrColorPreset::HdrLook);
+            grade.*field += .05f;
+            Check("each changed grade detects Custom",grade.Preset()==pt::HdrColorPreset::Custom);
+            grade.ApplyPreset(pt::HdrColorPreset::Custom);
+            Check("Custom selection preserves user values",grade.Preset()==pt::HdrColorPreset::Custom);
+        }
+        grade.ApplyPreset(pt::HdrColorPreset::HdrLook);
+        grade.wide_gamut=false;
+        Check("gamut change detects Custom",grade.Preset()==pt::HdrColorPreset::Custom);
+        grade.ApplyPreset(pt::HdrColorPreset::Original);
+        Check("Original resets grade with wide gamut On",grade.Preset()==pt::HdrColorPreset::Original && grade.wide_gamut && grade.blowout==0);
+        grade.highlights=29*.05f;grade.saturation=30*.05f;
+        Check("manual UI steps recognize matching HDR look",grade.Preset()==pt::HdrColorPreset::HdrLook);
+    }
     for (int mode=0; mode<2; ++mode) {
         pt::AppSettings chosen;
         auto& g=chosen.graphics;

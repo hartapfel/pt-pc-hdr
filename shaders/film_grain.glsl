@@ -3,11 +3,11 @@
 // grain.y packs the selected algorithm and the original ending variant:
 // 0/1 = Original, 2/3 = Improved Perceptual. Other parameters retain their ABI.
 vec3 ApplyFilmGrain(vec3 color, vec2 uv, vec2 pixel, vec4 grain, vec4 offset,
-                   sampler2D noise_texture, float eotf, float peak) {
+                   sampler2D noise_texture, float eotf, float peak, float wide) {
     if (grain.x <= 0.0 || grain.z <= 0.0) return color;
     if (grain.y >= 2.0) {
         return EncodeSdrReference(PerceptualFilmGrain(DecodeSdrReference(color, eotf),
-            pixel, offset.xy, grain.z, peak), eotf);
+            pixel, offset.xy, grain.z, peak, wide), eotf);
     }
     // Original port algorithm, including texture, animated phase and ending
     // response. Preserve its behavior when Original is selected.

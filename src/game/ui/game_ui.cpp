@@ -360,6 +360,7 @@ void GameUi::Update(Game& game, const InputState& input, float dt) {
     last_caption_ = fx.caption_id;
     last_caption_time_ = fx.caption_time;
 
+    menu_.SetHdrActive(renderer_ && renderer_->OutputMode() != RendererOutputMode::Sdr);
     menu_.SetPromptStyle(input.prompts);
     prompts_ = input.prompts;
     MenuInput menu_input = MapMenuInput(input, previous_held_, previous_dirs_);

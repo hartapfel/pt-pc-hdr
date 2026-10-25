@@ -2,7 +2,7 @@
 
 ## Source and prerequisites
 
-Clone `https://github.com/hartapfel/pt-pc-hdr.git` and check out `v1.0.8-hdr` (or branch `hdr` before the first release). GitHub's source ZIP/tar.gz and the explicit release source ZIP contain the same tracked tree. No RenoDX checkout is required. The baseline is official `v1.0.8`, commit `3b1392abe5215773d4c353f5bc1ecb85233be68a`.
+Clone `https://github.com/hartapfel/pt-pc-hdr.git` and check out `v1.0.8.1-hdr` (or branch `hdr` for current source). GitHub's source ZIP/tar.gz and the explicit release source ZIP contain the same tracked tree. No RenoDX checkout is required. The baseline is official `v1.0.8`, commit `3b1392abe5215773d4c353f5bc1ecb85233be68a`.
 
 Use Windows x64, Visual Studio 2022 Build Tools with the C++ desktop workload/Windows SDK, LLVM/Clang, CMake 3.28 or newer, Ninja, Git, Python 3 and .NET SDK 10. Install a Vulkan SDK providing Vulkan headers/loader, `glslc` and `spirv-opt`; set `VULKAN_SDK` to its directory. The upstream batch wrapper expects VS 2022 BuildTools and LLVM/CMake in their usual Program Files locations. Adjust it locally for a different VS installation. `PT_BUILD_JOBS` controls parallelism.
 
@@ -31,14 +31,14 @@ Official fork releases use a separate Ed25519 update key. It is **not** an Authe
 
 ```bat
 python tools\ci\release_signing.py keygen --keys ..\my-private-hdr-release-keys
-python tools\ci\release.py --version 1.0.8-hdr --dest dist --name 1.0.8-hdr --out release-report --liborbis ..\LibOrbisPkg --signing-keys ..\my-private-hdr-release-keys
+python tools\ci\release.py --version 1.0.8.1-hdr --dest dist --name 1.0.8.1-hdr --out release-report --liborbis ..\LibOrbisPkg --signing-keys ..\my-private-hdr-release-keys
 ```
 
 Generating a key changes the public-key source header; keep that change in your own build/fork. To reproduce the public source without changing its key, build the game and payload using `tools/package.py` and `tools/prepare_native_installer.py`, build `pt_setup`, then run `tools/ci/stamp_integrity.py`. Only the maintainer can produce an update trailer accepted by official fork installations. Private signing material is not needed to rebuild the engine, shaders or extractor.
 
-Use a new `--name` for each packaging attempt; the packager refuses an existing portable output. Without `--game`, and with no `game/CUSA01127` directory, the package contains no scene previews. Never put original game archives into a public source/release artifact. The installer is named **P.T.PC.Port.1.0.8-HDR.Setup.exe**; the portable asset is **P.T.PC.Port.1.0.8-HDR-portable-windows.zip**.
+Use a new `--name` for each packaging attempt; the packager refuses an existing portable output. Without `--game`, and with no `game/CUSA01127` directory, the package contains no scene previews. Never put original game archives into a public source/release artifact. The versioned downloads are **P.T.PC.Port.1.0.8.1-HDR.Setup.exe** and **P.T.PC.Port.1.0.8.1-HDR-portable-windows.zip**. The release tooling also keeps **P.T.PC.Port.1.0.8-HDR.Setup.exe**, byte-identical to the versioned installer, for compatibility with existing updaters.
 
-The fork polls its own GitHub Releases endpoint and trusts its own signing key. Numeric tags optionally ending in `-hdr` are accepted; drafts/prereleases are not offered as automatic updates. For future releases, update the version and canonical installer filename consistently in CMake, `update_check.cpp`, release tooling and platform tests.
+The fork polls its own GitHub Releases endpoint and trusts its own signing key. Numeric tags optionally ending in `-hdr` are accepted; drafts/prereleases are not offered as automatic updates. Use `<upstream version>.<fork revision>-hdr`, starting at `1.0.8.1-hdr`; initial `1.0.8-hdr` is revision zero. Increment the numeric fourth component for further fork releases. Set the same version in CMake, the release command, tag and notes. **Do not change the legacy canonical installer name** in `update_check.cpp`, `release_signing.py` or release tooling: old clients require it inside the signed manifest too. The versioned manual-download copy is generated automatically after signing. Keep the existing private signing key. Publish only after all assets are uploaded and verified, as a non-prerelease marked Latest.
 
 ## Validation
 

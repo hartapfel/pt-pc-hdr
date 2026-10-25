@@ -11,6 +11,11 @@ layout(location = 2) flat out uint out_draw;
 layout(push_constant) uniform UiPush {
     vec2 inverse_extent;
     uint draw;
+    float eotf;
+    vec4 grade;
+    vec4 chroma;
+    vec4 extra; // blowout, reserved
+    vec4 ui;
 } push;
 
 void main() {

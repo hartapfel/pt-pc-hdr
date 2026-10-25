@@ -165,6 +165,8 @@ std::optional<Release> ParseManifest(std::string_view json, std::string_view pla
     return release;
 }
 
+// Stable protocol name, including its historical version: existing 1.0.8-hdr
+// clients require this exact asset name in both GitHub metadata and signed trailers.
 std::string_view PackageAsset(std::string_view platform) {
     if (platform == "windows") return "P.T.PC.Port.1.0.8-HDR.Setup.exe";
     if (platform == "linux") return "P.T.PC.Port.Setup-linux";

@@ -247,12 +247,13 @@ Case CompositeCase(bool mode1) {
     c.textures = {SceneTexture(), GrainTexture(), UiTopTexture()};
     c.samplers = {LinearClamp(), LinearRepeat()};
     c.bindings = {{0, 0, Bind::Combined, {0}, 0}, {0, 1, Bind::Combined, {1}, 1}, {0, 2, Bind::Combined, {2}, 0}};
-    c.push_bytes = 80;
+    c.push_bytes = 128;
     if (mode1) {
         c.draws = {{0, 3, Floats({1.0f, 1.15f, 1.0f, 0.0f, 0, 0, 0, 0, 1.0f, 0.0f, 0.7f, 0.0f, 0.137f, 0.291f, 1.2f, 0.0f, 0, 0, 0, 1.0f})}};
     } else {
         c.draws = {{0, 3, Floats({1.0f, 1.0f, 0.0f, 2.0f, 0.05f, 0.05f, 0.2f, 0.5f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})}};
     }
+    for (auto& draw : c.draws) draw.push.resize(128, 0);
     return c;
 }
 
@@ -318,6 +319,9 @@ Case UiCase(gpu::Format color = gpu::Format::R8G8B8A8Unorm, uint32_t width = 320
         Put(draw.push, 1.0f / height);
         Put(draw.push, static_cast<uint32_t>(draws.size()));
         Put(draw.push, 0u);
+        draw.push.resize(64, 0);
+        Put(draw.push, 1.0f); // UI brightness ratio, inactive in this SDR fixture.
+        draw.push.resize(80, 0);
         draws.push_back(d);
         c.draws.push_back(std::move(draw));
     };
@@ -372,7 +376,7 @@ Case UiCase(gpu::Format color = gpu::Format::R8G8B8A8Unorm, uint32_t width = 320
                   {0, 3, Bind::TexSampler, {}, 0},
                   {1, 0, Bind::StorageBuffer, {}, 0, bytes},
                   {1, 1, Bind::Combined, {3}, 1}};
-    c.push_bytes = 16;
+    c.push_bytes = 80;
     return c;
 }
 
@@ -1160,6 +1164,9 @@ bool TextureManagerRun(gpu::Device& dev, Picture& out) {
         Put(call.push, 1.0f / kH);
         Put(call.push, static_cast<uint32_t>(draws.size()));
         Put(call.push, 0u);
+        call.push.resize(64, 0);
+        Put(call.push, 1.0f); // UI brightness ratio, inactive in this SDR fixture.
+        call.push.resize(80, 0);
         draws.push_back(d);
         calls.push_back(std::move(call));
     };
@@ -1200,7 +1207,7 @@ bool TextureManagerRun(gpu::Device& dev, Picture& out) {
     }
     gpu::PipelineLayoutDesc ld;
     ld.sets = {textures.BindingLayout(), set1_layout};
-    ld.push_bytes = 16;
+    ld.push_bytes = 80;
     ld.push_stages = gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment;
     const gpu::PipelineLayoutHandle layout = dev.CreatePipelineLayout(ld);
     gpu::GraphicsPipelineDesc pd;

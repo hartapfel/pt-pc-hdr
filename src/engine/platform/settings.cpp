@@ -105,6 +105,19 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
     Read(v, "display.hdr_peak", out.display.hdr_peak);
     Read(v, "display.hdr_sdr_eotf", out.display.hdr_sdr_eotf);
     out.display.hdr_sdr_eotf = std::clamp(out.display.hdr_sdr_eotf, 0, 2);
+    out.display.hdr_ui_brightness = std::clamp(out.display.hdr_paper_white, 80, 500);
+    Read(v, "display.hdr_ui_brightness", out.display.hdr_ui_brightness);
+    out.display.hdr_ui_brightness = std::clamp(out.display.hdr_ui_brightness, 80, 500);
+    Read(v, "display.hdr_menu_preview", out.display.hdr_menu_preview);
+    Read(v, "display.hdr_exposure", out.display.hdr_color.exposure);
+    Read(v, "display.hdr_contrast", out.display.hdr_color.contrast);
+    Read(v, "display.hdr_highlights", out.display.hdr_color.highlights);
+    Read(v, "display.hdr_shadows", out.display.hdr_color.shadows);
+    Read(v, "display.hdr_saturation", out.display.hdr_color.saturation);
+    Read(v, "display.hdr_highlight_saturation", out.display.hdr_color.highlight_saturation);
+    Read(v, "display.hdr_wide_gamut", out.display.hdr_color.wide_gamut);
+    Read(v, "display.hdr_blowout", out.display.hdr_color.blowout);
+    out.display.hdr_color.Normalize();
     Read(v, "display.letterbox", out.display.letterbox);
     Read(v, "display.rendering_api", out.display.rendering_api);
     Read(v, "display.rendering_api_asked", out.display.rendering_api_asked);
@@ -340,12 +353,23 @@ bool SaveAppSettings(const std::filesystem::path& path, const AppSettings& s) {
          << "; frames per second at most, 0 for no limit (menus and the paused game stay at 60 or less either way)\n"
          << "fps_limit = " << s.display.fps_limit << "\n"
          << "hdr = " << (s.display.hdr ? 1 : 0) << "\n"
-         << "; HDR output levels in nits: paper white (80 to 500) is the picture's white and the menus, the peak (400 to 4000) is how bright\n"
+         << "; HDR output levels in nits: game brightness / legacy paper white (80 to 500) is scene reference white, the peak (400 to 4000) is how bright\n"
          << "; the lamps, the flashlight and the glow around them go; a peak of 0 takes the display's own, 1000 where Windows does not tell it\n"
          << "hdr_paper_white = " << s.display.hdr_paper_white << "\n"
          << "hdr_peak = " << s.display.hdr_peak << "\n"
          << "; SDR display response to preserve in HDR: 0 sRGB, 1 gamma 2.2 (default), 2 gamma 2.4\n"
          << "hdr_sdr_eotf = " << s.display.hdr_sdr_eotf << "\n"
+         << "; Independent interface white in nits (80 to 500), unaffected by scene grading\n"
+         << "hdr_ui_brightness = " << s.display.hdr_ui_brightness << "\n"
+         << "hdr_menu_preview = " << s.display.hdr_menu_preview << "\n"
+         << "hdr_exposure = " << s.display.hdr_color.exposure << "\n"
+         << "hdr_contrast = " << s.display.hdr_color.contrast << "\n"
+         << "hdr_highlights = " << s.display.hdr_color.highlights << "\n"
+         << "hdr_shadows = " << s.display.hdr_color.shadows << "\n"
+         << "hdr_saturation = " << s.display.hdr_color.saturation << "\n"
+         << "hdr_highlight_saturation = " << s.display.hdr_color.highlight_saturation << "\n"
+         << "hdr_blowout = " << s.display.hdr_color.blowout << "\n"
+         << "hdr_wide_gamut = " << s.display.hdr_color.wide_gamut << "\n"
          << "; black bars over and under the picture in play and in the cutscenes, not in the original: 0 off, 1 2.39:1, 2 1.85:1\n"
          << "letterbox = " << s.display.letterbox << "\n"
          << "; the graphics API the game draws with at the next start: vulkan, or d3d12 (DirectX 12, Windows)\n"

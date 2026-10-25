@@ -1,5 +1,7 @@
 #pragma once
 
+#include "engine/platform/hdr_color_settings.h"
+
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -21,6 +23,9 @@ struct AppSettings {
         bool hdr = false;
         int hdr_paper_white = 200;
         int hdr_peak = 0;
+        int hdr_ui_brightness = 200;
+        bool hdr_menu_preview = true;
+        HdrColorSettings hdr_color;
         int hdr_sdr_eotf = 1; // 0 sRGB, 1 gamma 2.2, 2 gamma 2.4
         int letterbox = 0;
         std::string rendering_api = "vulkan";

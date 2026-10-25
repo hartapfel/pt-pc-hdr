@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/platform/hdr_color_settings.h"
 #include "engine/render/hdr_output.h"
 #include "engine/render/output_mode.h"
 #include "engine/render/pipeline_warmup.h"
@@ -36,6 +37,8 @@ struct RendererSettings {
     bool hdr = false;
     int hdr_paper_white = 200;
     int hdr_peak = 0;
+    int hdr_ui_brightness = 200;
+    HdrColorSettings hdr_color;
     int hdr_sdr_eotf = 1;
     std::filesystem::path pipeline_cache_dir;
     uint32_t width = 1600;
@@ -74,6 +77,8 @@ public:
     void Resize(uint32_t width, uint32_t height);
     void SetVsync(bool enabled);
     void SetHdr(bool enabled);
+    HdrColorSettings hdr_color;
+    int hdr_ui_brightness = 200;
     void SetHdrLevels(int paper_white, int peak);
     void SetHdrSdrEotf(int mode) { hdr_sdr_eotf_ = std::clamp(mode, 0, 2); }
 #ifdef _WIN32
@@ -118,6 +123,7 @@ public:
     RendererOutputMode OutputMode() const { return output_mode_; }
     int HdrSdrEotf() const { return hdr_sdr_eotf_; }
     float OutputBrightness() const {
+        if (output_mode_ != RendererOutputMode::Sdr) return 1.0f;
         return plain_output ? 1.0f : std::clamp(brightness_override_ > 0.0f ? brightness_override_ : output_brightness, 0.1f, 4.0f);
     }
 
@@ -166,7 +172,7 @@ private:
                                 gpu::PipelineLayoutHandle layout = {});
     bool CreateLayerPipeline();
     gpu::BindingSetHandle LayerSet(gpu::ImageViewHandle hudless_view);
-    void CompositePush(float (&push)[20], float mode, gpu::Extent2D extent, bool with_top_ui, bool grain_off) const;
+    void CompositePush(float (&push)[32], float mode, gpu::Extent2D extent, bool with_top_ui, bool grain_off) const;
     void UpdateOutputMode();
     bool InitImGui(SDL_Window* window);
     void Composite(gpu::CommandList& cmd, gpu::BindingSetHandle set, float mode, gpu::Extent2D extent, gpu::Format target_format,

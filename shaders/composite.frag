@@ -1,6 +1,5 @@
 #version 460
-#include "hdr_shoulder.glsl"
-#include "composite_output.glsl"
+#include "hdr_color.glsl"
 #include "film_grain.glsl"
 #include "hdr_rcas.glsl"
 
@@ -20,6 +19,9 @@ layout(push_constant) uniform CompositeParams {
     vec4 grain;
     vec4 grain_offset;
     vec4 hdr;
+    vec4 grade;
+    vec4 chroma;
+    vec4 extra; // blowout, reserved
 } params;
 
 vec3 MappedScene(vec2 uv) {
@@ -36,10 +38,8 @@ vec3 MappedScene(vec2 uv) {
     if (params.hdr.z > 0.5) {
         // Map scene highlights before the UI overlays. Leave every SDR color
         // unchanged, and scale RGB together to preserve highlight chromaticity.
-        vec3 linear_color = DecodeSdrReference(HdrSceneBrightness(color, params.brightness), params.sdr_eotf);
-        float peak = max(linear_color.r, max(linear_color.g, linear_color.b));
-        if (peak > 0.0) linear_color *= HdrShoulder(peak, max(params.hdr.y / params.hdr.x, 1.0)) / peak;
-        color = EncodeSdrReference(linear_color, params.sdr_eotf);
+        color = MapHdrScene(color, params.brightness, params.sdr_eotf,
+            max(params.hdr.y / params.hdr.x, 1.0), params.grade, params.chroma, params.extra);
     }
     return color;
 }
@@ -52,10 +52,10 @@ void main() {
         if (params.grain.x > 0.0) {
             float peak = params.hdr.z > 0.5 ? max(params.hdr.y / params.hdr.x, 1.0) : 1.0;
             color = ApplyFilmGrain(color, in_uv, gl_FragCoord.xy, params.grain,
-                params.grain_offset, grain_noise, params.sdr_eotf, peak);
+                params.grain_offset, grain_noise, params.sdr_eotf, peak, params.chroma.z);
         }
         color = color * (1.0 - top.a) + top.rgb;
-        out_color = vec4(CompositeDisplayColor(color, params.brightness, params.grain_offset.w, params.hdr.xy, params.sdr_eotf), 1.0);
+        out_color = vec4(CompositeDisplayColor(color, params.brightness, params.grain_offset.w, params.hdr.xy, params.sdr_eotf, params.chroma.z), 1.0);
         return;
     }
     color = MappedScene(in_uv);
@@ -67,7 +67,7 @@ void main() {
             DecodeSdrReference(MappedScene(in_uv + vec2(-texel.x, 0)), params.sdr_eotf),
             DecodeSdrReference(MappedScene(in_uv + vec2(texel.x, 0)), params.sdr_eotf),
             DecodeSdrReference(MappedScene(in_uv + vec2(0, texel.y)), params.sdr_eotf),
-            params.grain.w, peak), params.sdr_eotf);
+            params.grain.w, peak, params.chroma.z), params.sdr_eotf);
     }
     out_color = vec4(mix(color, params.fade.rgb, params.fade.a), 1.0);
 }

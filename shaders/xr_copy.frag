@@ -31,7 +31,7 @@ void main() {
     }
     vec3 color = c.rgb;
     if (p.grain.x > 0.0) {
-        color = ApplyFilmGrain(color, uv, gl_FragCoord.xy, p.grain, p.grain_offset, grain_noise, 0.0, 1.0);
+        color = ApplyFilmGrain(color, uv, gl_FragCoord.xy, p.grain, p.grain_offset, grain_noise, 0.0, 1.0, 0.0);
     }
     color = pow(clamp(color, 0.0, 1.0), vec3(1.0 / max(p.params.y, 0.1)));
     out_color = vec4(Decode(color), 1.0);

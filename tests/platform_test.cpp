@@ -36,6 +36,15 @@ int main(int argc, char** argv) {
     check(update::CompareVersions("0.1", "0.1.0") == 0, "missing parts are zero");
     check(update::CompareVersions("1.0.5.1", "1.0.5") > 0, "four-part hotfix follows the released three-part version");
     check(update::CompareVersions("1.0.6", "1.0.5.1") > 0, "next patch follows a four-part hotfix");
+    check(update::CompareVersions("1.0.8.1-hdr", "1.0.8-hdr") > 0, "first HDR fork revision updates the original release");
+    check(update::CompareVersions("1.0.8.10-hdr", "1.0.8.2-hdr") > 0, "HDR revisions compare numerically");
+    check(update::CompareVersions("1.0.9-hdr", "1.0.8.10-hdr") > 0, "next upstream base follows HDR revisions");
+    const auto hdr_revision = update::ParseManifest(
+        R"({"tag_name":"v1.0.8.1-hdr","draft":false,"prerelease":false,"html_url":"https://github.com/hartapfel/pt-pc-hdr/releases/tag/v1.0.8.1-hdr","assets":[{"name":"P.T.PC.Port.1.0.8.1-HDR.Setup.exe","browser_download_url":"https://github.com/hartapfel/pt-pc-hdr/releases/download/v1.0.8.1-hdr/P.T.PC.Port.1.0.8.1-HDR.Setup.exe","size":1000},{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","browser_download_url":"https://github.com/hartapfel/pt-pc-hdr/releases/download/v1.0.8.1-hdr/P.T.PC.Port.1.0.8-HDR.Setup.exe","size":1000}]})", "windows");
+    check(hdr_revision && hdr_revision->package_size == 1000 && hdr_revision->package_url.ends_with("/v1.0.8.1-hdr/P.T.PC.Port.1.0.8-HDR.Setup.exe") && hdr_revision->url == hdr_revision->package_url,
+          "HDR revision uses the backward-compatible signed installer asset");
+    check(!update::ParseManifest(R"({"tag_name":"v1.0.8.1-hdr","draft":true,"html_url":"https://example.org/r"})", "windows"), "HDR draft is not offered");
+    check(!update::ParseManifest(R"({"tag_name":"v1.0.8.1-hdr","prerelease":true,"html_url":"https://example.org/r"})", "windows"), "HDR prerelease is not offered");
     const auto hdr_release = update::ParseManifest(
         R"({"tag_name":"v1.0.8-hdr","html_url":"https://github.com/hartapfel/pt-pc-hdr/releases/tag/v1.0.8-hdr","assets":[{"name":"P.T.PC.Port.1.0.8-HDR.Setup.exe","browser_download_url":"https://github.com/hartapfel/pt-pc-hdr/releases/download/v1.0.8-hdr/P.T.PC.Port.1.0.8-HDR.Setup.exe","size":1000}]})", "windows");
     check(hdr_release && !hdr_release->package_url.empty() && hdr_release->package_size == 1000, "HDR fork tag and installer are discovered");

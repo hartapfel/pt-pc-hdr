@@ -2873,10 +2873,10 @@ public:
             access.rows.push_back(std::move(fov));
             return {std::move(access)};
         }
-        if (page_ == kGraphicsPage) return GraphicsSections();
-        if (page_ == kLightingPage) return LightingSections();
-        if (page_ == kTexturesPage) return TextureSections();
-        if (page_ == kEffectsPage) return EffectSections();
+        if (page_ == kGraphicsPage) return PreviewSections(GraphicsSections());
+        if (page_ == kLightingPage) return PreviewSections(LightingSections());
+        if (page_ == kTexturesPage) return PreviewSections(TextureSections());
+        if (page_ == kEffectsPage) return PreviewSections(EffectSections());
         if (page_ == kModsPage) return ModSections();
         if (page_ == kMicrophonePage) {
             pt::game::PcSettingSection test{"pc_microphone_test", 0, {}};
@@ -2932,31 +2932,6 @@ public:
         if (s.display.fps_limit>0 && cap.value==0) { cap.values.push_back(std::to_string(s.display.fps_limit)); cap.value=9; }
         cap.wrap=false;
         display.rows.push_back(std::move(cap));
-        const bool hdr_available = app_.display_hdr != 0;
-        pt::game::PcSettingRow hdr = Row(kHdr, "pc_hdr", OffOn(), s.display.hdr && hdr_available ? 1 : 0,
-                                         hdr_available ? "pc_note_hdr_restart" : "pc_note_hdr_windows_off");
-        hdr.enabled = hdr_available;
-        display.rows.push_back(std::move(hdr));
-        if (s.display.hdr && hdr_available) {
-            std::vector<int> steps = HdrPaperWhiteSteps(s.display.hdr_paper_white);
-            pt::game::PcSettingRow paper = Row(kHdrPaperWhite, "pc_hdr_paper_white", {}, 0, "pc_note_hdr_paper_white");
-            for (size_t i = 0; i < steps.size(); ++i) {
-                paper.values.push_back(std::format("{} nits", steps[i]));
-                if (steps[i] == s.display.hdr_paper_white) paper.value = static_cast<int>(i);
-            }
-            paper.wrap = false;
-            display.rows.push_back(std::move(paper));
-            steps = HdrPeakSteps(s.display.hdr_peak);
-            pt::game::PcSettingRow peak = Row(kHdrPeak, "pc_hdr_peak", {}, 0, "pc_note_hdr_peak");
-            for (size_t i = 0; i < steps.size(); ++i) {
-                peak.values.push_back(steps[i] == 0 ? std::string("pc_hdr_peak_auto") : std::format("{} nits", steps[i]));
-                if (steps[i] == s.display.hdr_peak) peak.value = static_cast<int>(i);
-            }
-            peak.wrap = false;
-            display.rows.push_back(std::move(peak));
-            display.rows.push_back(Row(kHdrSdrEotf, "pc_hdr_sdr_eotf", {"sRGB", "Gamma 2.2", "Gamma 2.4"},
-                                       s.display.hdr_sdr_eotf, "pc_note_hdr_sdr_eotf"));
-        }
         if (pt::RenderingApiSelectable()) {
             pt::RenderingApi api = pt::RenderingApi::Vulkan;
             pt::ParseRenderingApi(s.display.rendering_api, api);
@@ -2972,7 +2947,76 @@ public:
             }
             display.rows.push_back(std::move(rendering_api));
         }
-        if (page_ == kDisplayPage) return {std::move(display)};
+        const bool hdr_available = app_.display_hdr != 0;
+        pt::game::PcSettingRow hdr = Row(kHdr, "pc_hdr", OffOn(), s.display.hdr && hdr_available ? 1 : 0,
+                                         hdr_available ? "pc_note_hdr_restart" : "pc_note_hdr_windows_off");
+        hdr.enabled = hdr_available;
+        display.rows.push_back(std::move(hdr));
+        if (s.display.hdr && hdr_available) {
+            std::vector<int> steps = HdrPeakSteps(s.display.hdr_peak);
+            pt::game::PcSettingRow peak = Row(kHdrPeak, "pc_hdr_peak", {}, 0, "pc_note_hdr_peak");
+            for (size_t i = 0; i < steps.size(); ++i) {
+                peak.values.push_back(steps[i] == 0 ? std::string("pc_hdr_peak_auto") : std::format("{} nits", steps[i]));
+                if (steps[i] == s.display.hdr_peak) peak.value = static_cast<int>(i);
+            }
+            peak.wrap = false;
+            display.rows.push_back(std::move(peak));
+            steps = HdrPaperWhiteSteps(s.display.hdr_paper_white);
+            pt::game::PcSettingRow paper = Row(kHdrPaperWhite, "pc_hdr_paper_white", {}, 0, "pc_note_hdr_paper_white");
+            for (size_t i = 0; i < steps.size(); ++i) {
+                paper.values.push_back(std::format("{} nits", steps[i]));
+                if (steps[i] == s.display.hdr_paper_white) paper.value = static_cast<int>(i);
+            }
+            paper.wrap = false;
+            display.rows.push_back(std::move(paper));
+            display.rows.push_back(Row(kHdrSdrEotf, "pc_hdr_sdr_eotf", {"sRGB", "Gamma 2.2", "Gamma 2.4"},
+                                       s.display.hdr_sdr_eotf, "pc_note_hdr_sdr_eotf"));
+        }
+        if (page_ == kDisplayPage) {
+            if (!s.display.hdr || !hdr_available) return {std::move(display)};
+            pt::game::PcSettingRow ui = Row(kHdrUiBrightness, "pc_hdr_ui_brightness", {}, 0, "pc_note_hdr_ui_brightness");
+            const auto ui_steps = HdrPaperWhiteSteps(s.display.hdr_ui_brightness);
+            for (size_t i = 0; i < ui_steps.size(); ++i) {
+                ui.values.push_back(std::format("{} nits", ui_steps[i]));
+                if (ui_steps[i] == s.display.hdr_ui_brightness) ui.value = static_cast<int>(i);
+            }
+            ui.wrap = false;
+            // Keep UI brightness immediately after game brightness.
+            const auto eotf = std::find_if(display.rows.begin(), display.rows.end(), [](const auto& row) { return row.id == kHdrSdrEotf; });
+            display.rows.insert(eotf, std::move(ui));
+            pt::game::PcSettingSection grade{"pc_hdr_grade", 1, {}};
+            auto preset = Row(kHdrGradePreset, "pc_hdr_grade_preset", {"pc_hdr_original", "pc_hdr_look", "pc_preset_custom"},
+                              static_cast<int>(s.display.hdr_color.Preset()), "pc_note_hdr_grade_preset");
+            preset.wrap = false;
+            grade.rows.push_back(std::move(preset));
+            grade.rows.push_back(Row(kHdrWideGamut, "pc_hdr_wide_gamut", OffOn(), s.display.hdr_color.wide_gamut, "pc_note_hdr_wide_gamut"));
+            auto slider = [&](int id, const char* label, float current, int first, int last, int step, bool exposure = false) {
+                auto row = Row(id, label, {}, 0, std::string("pc_note_") + (label + 3));
+                for (int value = first; value <= last; value += step)
+                    row.values.push_back(exposure ? std::format("{:+.1f} EV", value / 100.0f) : std::format("{}%", value));
+                row.value = std::clamp(int(std::lround((current * 100 - first) / step)), 0, (last - first) / step);
+                row.wrap = false;
+                grade.rows.push_back(std::move(row));
+            };
+            const auto& g = s.display.hdr_color;
+            slider(kHdrExposure, "pc_hdr_exposure", g.exposure, -400, 400, 10, true);
+            slider(kHdrContrast, "pc_hdr_contrast", g.contrast, 0, 200, 5);
+            slider(kHdrHighlights, "pc_hdr_highlights", g.highlights, 0, 200, 5);
+            slider(kHdrShadows, "pc_hdr_shadows", g.shadows, 0, 200, 5);
+            slider(kHdrSaturation, "pc_hdr_saturation", g.saturation, 0, 200, 5);
+            slider(kHdrHighlightSaturation, "pc_hdr_highlight_saturation", g.highlight_saturation, 0, 200, 5);
+            slider(kHdrBlowout, "pc_hdr_blowout", g.blowout, 0, 100, 5);
+            grade.rows.push_back(Row(kHdrMenuPreview, "pc_hdr_menu_preview", OffOn(), s.display.hdr_menu_preview, "pc_note_hdr_menu_preview"));
+            auto reset = Row(kHdrGradeReset, "pc_hdr_grade_reset", {}, 0, "pc_note_hdr_grade_reset");
+            reset.link = true;
+            grade.rows.push_back(std::move(reset));
+            for (auto& row : display.rows) {
+                if (row.id == kHdrPaperWhite || row.id == kHdrPeak || row.id == kHdrSdrEotf || row.id == kHdrUiBrightness)
+                    row.preview_scene = s.display.hdr_menu_preview;
+            }
+            for (auto& row : grade.rows) row.preview_scene = s.display.hdr_menu_preview;
+            return {std::move(display), std::move(grade)};
+        }
 
         const pt::UpscaleSettings& u = app_.scene.upscale;
         const bool off = u.kind == pt::UpscalerKind::Off;
@@ -3175,7 +3219,7 @@ public:
             out.push_back(std::move(upscaling));
             out.push_back(std::move(generation));
             out.push_back(std::move(neural_section));
-            return out;
+            return PreviewSections(std::move(out));
         }
         pt::game::PcSettingSection sound{"pc_section_sound", 1, {}};
         pt::game::PcSettingRow volume = Row(kVolume, "pc_volume", {}, std::clamp(static_cast<int>(std::lround(s.audio.volume * 10.0f)), 0, 20), "");
@@ -3300,7 +3344,7 @@ public:
     void AddProgressAndSupport(std::vector<pt::game::PcSettingSection>& out) {
         pt::game::PcSettingSection progress{"pc_section_progress", 0, {}};
         pt::game::PcSettingRow reset = Row(kReset, "pc_reset", {"pc_reset_value"}, 0, "pc_note_reset");
-        reset.action = true;
+        reset.link = true;
         reset.confirm_note = "pc_dlg_reset";
         if (!game_.SavesEnabled()) {
             reset.values = {"pc_reset_done"};
@@ -3563,6 +3607,23 @@ public:
             app_.renderer.SetHdrLevels(s.display.hdr_paper_white, s.display.hdr_peak);
             break;
         }
+        case kHdrUiBrightness: {
+            const auto steps = HdrPaperWhiteSteps(s.display.hdr_ui_brightness);
+            s.display.hdr_ui_brightness = steps[std::clamp(value, 0, static_cast<int>(steps.size()) - 1)];
+            break;
+        }
+        case kHdrGradePreset:
+            s.display.hdr_color.ApplyPreset(static_cast<pt::HdrColorPreset>(std::clamp(value, 0, 2)));
+            break;
+        case kHdrWideGamut: s.display.hdr_color.wide_gamut = value == 1; break;
+        case kHdrExposure: s.display.hdr_color.exposure = -4.0f + std::clamp(value, 0, 80) * 0.1f; break;
+        case kHdrContrast: s.display.hdr_color.contrast = std::clamp(value, 0, 40) * 0.05f; break;
+        case kHdrHighlights: s.display.hdr_color.highlights = std::clamp(value, 0, 40) * 0.05f; break;
+        case kHdrShadows: s.display.hdr_color.shadows = std::clamp(value, 0, 40) * 0.05f; break;
+        case kHdrSaturation: s.display.hdr_color.saturation = std::clamp(value, 0, 40) * 0.05f; break;
+        case kHdrHighlightSaturation: s.display.hdr_color.highlight_saturation = std::clamp(value, 0, 40) * 0.05f; break;
+        case kHdrBlowout: s.display.hdr_color.blowout = std::clamp(value, 0, 20) * 0.05f; break;
+        case kHdrMenuPreview: s.display.hdr_menu_preview = value == 1; break;
         case kHdrSdrEotf:
             s.display.hdr_sdr_eotf = std::clamp(value, 0, 2);
             app_.renderer.SetHdrSdrEotf(s.display.hdr_sdr_eotf);
@@ -3828,6 +3889,8 @@ public:
         default:
             return;
         }
+        app_.renderer.hdr_color = s.display.hdr_color;
+        app_.renderer.hdr_ui_brightness = s.display.hdr_ui_brightness;
         ApplyGraphicsSettings(app_);
         Save();
     }
@@ -3856,6 +3919,10 @@ public:
         }
     }
 
+    bool PreviewWholePage() const override {
+        return app_.settings.display.hdr_menu_preview &&
+            (page_ == kGraphicsPage || page_ == kLightingPage || page_ == kTexturesPage || page_ == kEffectsPage);
+    }
     bool IsLoopBrowser() const override { return page_ == kLoopPage; }
     bool IsBrowser() const override { return page_ == kLoopPage; }
     pt::game::PcGallery Gallery() const override {
@@ -4057,6 +4124,13 @@ public:
     }
 
     void Activate(int id) override {
+        if (id == kHdrGradeReset) {
+            keep_cursor_ = true;
+            app_.settings.display.hdr_color.ApplyPreset(pt::HdrColorPreset::Original);
+            app_.renderer.hdr_color = app_.settings.display.hdr_color;
+            Save();
+            return;
+        }
         if (id == kFgUnlock && app_.fg_install_usable) id = app_.fg_unlock_choice == 1 ? kFgUninstall : kFgReinstall;
         if (id == kNeuralUnlock && app_.nr_install_usable && UsesNrRoute(app_.nr_gpu)) id = app_.nr_unlock_choice == 1 ? kNeuralUninstall : kNeuralReinstall;
         keep_cursor_ = false;
@@ -4282,7 +4356,7 @@ private:
         kDisplayMode,
         kResolution,
         kRefreshRate,
-        kVsync, kFpsLimit, kHdr, kHdrPaperWhite, kHdrPeak, kHdrSdrEotf, kSurround, kControllerSpeaker, kControllerSpeakerVolume, kRumbleProfile, kPromptStyle,
+        kVsync, kFpsLimit, kHdr, kHdrPaperWhite, kHdrPeak, kHdrSdrEotf, kHdrUiBrightness, kHdrWideGamut, kHdrExposure, kHdrContrast, kHdrHighlights, kHdrShadows, kHdrSaturation, kHdrHighlightSaturation, kHdrBlowout, kHdrMenuPreview, kHdrGradePreset, kHdrGradeReset, kSurround, kControllerSpeaker, kControllerSpeakerVolume, kRumbleProfile, kPromptStyle,
         kUpscaler,
         kQuality,
         kSharpness,
@@ -4761,6 +4835,12 @@ private:
         }
     }
 
+    std::vector<pt::game::PcSettingSection> PreviewSections(std::vector<pt::game::PcSettingSection> sections) const {
+        for (auto& section : sections) for (auto& row : section.rows)
+            row.preview_scene = app_.settings.display.hdr_menu_preview && !row.action && !row.link;
+        return sections;
+    }
+
     std::vector<pt::game::PcSettingSection> GraphicsSections() const {
         const auto& s=app_.settings;
         std::string reason;
@@ -4769,6 +4849,7 @@ private:
         auto preset=Row(kGraphicsPreset,"pc_graphics_preset",{"pc_preset_low","pc_preset_original","pc_preset_high","pc_preset_ultra","pc_preset_custom"},
                         static_cast<int>(pt::DetectGraphicsPreset(s,supported)),PresetNote(pt::DetectGraphicsPreset(s,supported)));
         preset.wrap=false;quality.rows.push_back(std::move(preset));
+        quality.rows.push_back(Row(kHdrMenuPreview, "pc_hdr_menu_preview", OffOn(), s.display.hdr_menu_preview, "pc_note_hdr_menu_preview"));
         auto lighting = LightingSections();
         auto textures = TextureSections();
         auto effects = EffectSections();
@@ -8306,6 +8387,8 @@ int main(int argc, char** argv) {
     settings.hdr_paper_white = app.settings.display.hdr_paper_white;
     settings.hdr_peak = app.settings.display.hdr_peak;
     settings.hdr_sdr_eotf = app.settings.display.hdr_sdr_eotf;
+    settings.hdr_color = app.settings.display.hdr_color;
+    settings.hdr_ui_brightness = app.settings.display.hdr_ui_brightness;
     if (!options.headless) {
         settings.pipeline_cache_dir = UserDataDir() / "pipeline-cache";
     } else if (!options.settings_path.empty()) {
