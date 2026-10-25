@@ -1,12 +1,12 @@
 # P.T. PC Port — Native HDR fork
 
-An independent Windows HDR fork of [LoreanXavier/pt-pc](https://github.com/LoreanXavier/pt-pc), based on official **v1.0.8** (`3b1392abe5215773d4c353f5bc1ecb85233be68a`). This is a native engine modification, not a RenoDX/ReShade addon and not an official RenoDX release. Original port credit and its MIT license remain with LoreanXavier; P.T. belongs to Konami.
+An independent HDR fork of [LoreanXavier/pt-pc](https://github.com/LoreanXavier/pt-pc), based on official **v1.0.8** (`3b1392abe5215773d4c353f5bc1ecb85233be68a`). Original port credit and its MIT license remain with LoreanXavier; P.T. belongs to Konami.
 
 ## Install
 
 Download **[P.T.PC.Port.1.0.8-HDR.Setup.exe](https://github.com/hartapfel/pt-pc-hdr/releases/latest)** from this fork's releases. A portable Windows ZIP and source archives are also provided. The installer includes the extraction helper and its LGPL corresponding source. Supply your own supported P.T. package or extracted game files, following the [original installation requirements](docs/installer.md). No original game archives, keys, saves or generated scene previews are included.
 
-Enable Windows HDR and the game's HDR output, then set peak brightness and paper white for your display. Existing settings are preserved; select High or Ultra to apply the new effect defaults. Report fork-specific issues [here](https://github.com/hartapfel/pt-pc-hdr/issues).
+Enable HDR on your OS and the game's HDR output, then set peak brightness and paper white for your display. Existing settings are preserved; select High or Ultra to apply the new effect defaults. Report fork-specific issues [here](https://github.com/hartapfel/pt-pc-hdr/issues).
 
 ## Changes from official 1.0.8
 
