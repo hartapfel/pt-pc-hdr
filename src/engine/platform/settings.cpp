@@ -180,6 +180,7 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
     Read(v, "graphics.bloom", out.graphics.bloom);
     Read(v, "graphics.depth_of_field", out.graphics.depth_of_field);
     Read(v, "graphics.motion_blur", out.graphics.motion_blur);
+    Read(v, "graphics.camera_motion_blur", out.graphics.camera_motion_blur);
     Read(v, "graphics.lens_distortion", out.graphics.lens_distortion);
     Read(v, "graphics.lens_ghosts", out.graphics.lens_ghosts);
     Read(v, "graphics.deband", out.graphics.deband);
@@ -490,7 +491,9 @@ bool SaveAppSettings(const std::filesystem::path& path, const AppSettings& s) {
          << "reflections = " << s.graphics.reflections << "\n"
          << "bloom = " << s.graphics.bloom << "\n"
          << "depth_of_field = " << s.graphics.depth_of_field << "\n"
+         << "; motion_blur enables the effect; camera_motion_blur adds camera movement to object motion\n"
          << "motion_blur = " << s.graphics.motion_blur << "\n"
+         << "camera_motion_blur = " << s.graphics.camera_motion_blur << "\n"
          << "lens_distortion = " << s.graphics.lens_distortion << "\n"
          << "; the lens flares' large reflections across the screen near a lamp, as in the original; 0 leaves them out\n"
          << "lens_ghosts = " << s.graphics.lens_ghosts << "\n"

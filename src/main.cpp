@@ -1943,7 +1943,7 @@ void ApplyGraphicsSettings(App& app) {
         const int preset=std::clamp(static_cast<int>(detected),0,4);
         const std::string text=std::format("preset {}, shadow maps {}, ambient occlusion {}, reflections {}, bloom {}, depth of field {}, motion blur {}, "
             "lens distortion {}, film grain {:.2f}, anisotropy {}, texture detail {}",kPresetNames[preset],g.shadow_quality,
-            g.ambient_occlusion?"on":"off",g.reflections?"on":"off",g.bloom?"on":"off",g.depth_of_field?"on":"off",g.motion_blur?"on":"off",
+            g.ambient_occlusion?"on":"off",g.reflections?"on":"off",g.bloom?"on":"off",g.depth_of_field?"on":"off",g.motion_blur?(g.camera_motion_blur?"camera+object":"object"):"off",
             g.lens_distortion?"on":"off",g.film_grain,g.anisotropy,g.texture_detail);
         static std::string last;
         if(text!=last){last=text;pt::LogInfo("graphics: {}",text);}
@@ -3830,7 +3830,7 @@ public:
         case kBloom: s.graphics.bloom=value==1;break;
         case kLensGhosts: s.graphics.ghost_strength=std::clamp(value,0,8)*.25f;s.graphics.lens_ghosts=value>0;break;
         case kDepthOfField: s.graphics.depth_of_field=value==1;break;
-        case kMotionBlur: s.graphics.motion_blur=value==1;break;
+        case kMotionBlur: s.graphics.motion_blur=value!=2;s.graphics.camera_motion_blur=value!=1;break;
         case kBloomType: s.graphics.bloom_type=std::clamp(value,0,1);break;
         case kFlareType: s.graphics.flare_type=std::clamp(value,0,1);break;
         case kLutSampling: s.graphics.lut_sampling=std::clamp(value,0,1);break;
@@ -4932,7 +4932,7 @@ private:
         const auto& g=app_.settings.graphics;
         pt::game::PcSettingSection effects{"pc_graphics_effects",0,{}};
         effects.rows.push_back(Row(kDepthOfField,"pc_dof",OffOn(),g.depth_of_field?1:0,"pc_note_dof"));
-        effects.rows.push_back(Row(kMotionBlur,"pc_motion_blur",OffOn(),g.motion_blur?1:0,"pc_note_motion_blur"));
+        effects.rows.push_back(Row(kMotionBlur,"pc_motion_blur",{"pc_motion_full","pc_motion_object","pc_off"},g.motion_blur?(g.camera_motion_blur?0:1):2,"pc_note_motion_blur"));
         effects.rows.push_back(Row(kBloomStrength,"pc_bloom_strength",{"pc_off","25%","50%","75%","100%","125%","150%","175%","200%"},static_cast<int>(g.bloom_strength*4+.5f),"pc_note_bloom_strength"));
         effects.rows.push_back(Row(kFlareStrength,"pc_flare_strength",{"pc_off","25%","50%","75%","100%","125%","150%","175%","200%"},static_cast<int>(g.flare_strength*4+.5f),"pc_note_flare_strength"));
         effects.rows.push_back(Row(kLensGhosts,"pc_ghost_strength",{"pc_off","25%","50%","75%","100%","125%","150%","175%","200%"},static_cast<int>(g.ghost_strength*4+.5f),"pc_note_ghost_strength"));

@@ -1,0 +1,36 @@
+# Run with isolated settings/saves, --headless --virtual-pads --audio-offline
+# --no-save --no-update-check --start-floor f010 --frames 3500.
+# Seed [graphics] motion_blur=1 with no camera_motion_blur key to check migration.
+0 sstep 15
+0 goto 0 0 12.5
+0 swait 10
+0 sfree
+0 sanchor
+0 gfile 0 -1.4 -4
+0 ffile 0 -0.2 7.5
+0 sev -4.1
+0 swait 40
+0 sui menu pc
+0 swait 120
+0 sui pcfocus pc_motion_blur
+0 swait 60
+0 sexpect pcvalue pc_motion_blur 0
+0 sui pcset pc_motion_blur 1
+0 swait 60
+0 sexpect pcvalue pc_motion_blur 1
+0 sui menukey close
+0 swait 20
+0 sui menu pc
+0 swait 120
+0 sui pcfocus pc_motion_blur
+0 swait 60
+0 sexpect pcvalue pc_motion_blur 1
+0 sui pcset pc_motion_blur 2
+0 swait 60
+0 sexpect pcvalue pc_motion_blur 2
+0 sui pcset pc_motion_blur 0
+0 swait 60
+0 sexpect pcvalue pc_motion_blur 0
+0 sui menukey close
+0 swait 20
+0 squit

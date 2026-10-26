@@ -101,6 +101,7 @@ struct AppSettings {
         bool bloom = true;
         bool depth_of_field = true;
         bool motion_blur = true;
+        bool camera_motion_blur = true; // False keeps only rigid/skinned object motion.
         bool lens_distortion = true;
         bool lens_ghosts = true;
         bool deband = false;

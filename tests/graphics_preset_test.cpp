@@ -21,6 +21,11 @@ int main(int argc,char** argv) {
     original.film_grain_type = 0; original.flare_strength = 1.0f;
     check("Original renderer defaults and original grain",s.graphics==original && s.ray_tracing==pt::AppSettings{}.ray_tracing);
     check("Original detected",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Original);
+    check("Original uses camera and object blur",s.graphics.motion_blur && s.graphics.camera_motion_blur);
+    s.graphics.camera_motion_blur=false;
+    check("Object-only blur is a Custom preset",pt::DetectGraphicsPreset(s,true)==pt::GraphicsPreset::Custom);
+    pt::ApplyGraphicsPreset(s,pt::GraphicsPreset::Original,true);
+    check("Original restores camera and object blur",s.graphics.camera_motion_blur);
     check("Original draws the flare ghosts",s.graphics.lens_ghosts);
     check("Original has no port dither (the PS4's output)",!s.graphics.deband);
     s.ray_tracing.contact_shadows=true;

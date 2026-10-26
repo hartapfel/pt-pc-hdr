@@ -1822,6 +1822,26 @@ bool HdrComposeRun(gpu::Device& dev) {
         valid=upload(0,gpu::kImgLdrA,pixels) && draw("dof_blur.frag",dof,1);
         for(const auto& v:result) valid=valid && v.a>0 && glm::all(glm::lessThan(glm::abs(glm::vec3(v)/v.a-glm::vec3(4,2,1)),glm::vec3(1e-4f)));
         report("HDR9 near DOF premultiplied colour / coverage conservation",valid);
+        // Production camera/object merge: static background must stay sharp in
+        // object-only mode, while covered moving objects keep their velocity.
+        auto& view=static_cast<gpu::FrameData*>(frame.mapped)->views[0];
+        view=gpu::View{};view.viewport=glm::vec4(w,h,1.f/w,1.f/h);view.projection_param=glm::vec4(1,1,1,0);
+        pixels.assign(w*h,glm::vec4(1,0,0,0));valid=upload(2,gpu::kImgDepth,pixels);
+        gpu::PassPush velocity;velocity.ids.x=gpu::kImgObjectVelocity;
+        velocity.m[3].x=.1f;
+        for(int full=0;full<2;++full) for(int jitter=0;jitter<2;++jitter) {
+            view.jitter=glm::vec4(jitter*.007f,jitter*-.011f,0,0);
+            velocity.f0=glm::vec4(1,1,1,float(full));
+            for(uint32_t y=0;y<h;++y) for(uint32_t x=0;x<w;++x)
+                pixels[y*w+x]=x<w/2?glm::vec4(0):glm::vec4(1,0,.2f,-.1f);
+            valid=upload(1,gpu::kImgObjectVelocity,pixels) && draw("mb_velocity.frag",velocity,1) && valid;
+            for(uint32_t y=0;y<h;++y) for(uint32_t x=0;x<w;++x) {
+                const glm::vec2 expected=x<w/2?glm::vec2(full?-.05f:0,0):glm::vec2(.2f,-.1f);
+                valid=valid && glm::length(glm::vec2(result[y*w+x].z,result[y*w+x].w)-expected)<2e-6f;
+            }
+        }
+        report("object-only excludes camera/jitter; full mode preserves camera and object vectors",valid);
+        view.jitter=glm::vec4(0);
         gpu::PassPush mb;mb.ids=glm::uvec4(gpu::kImgLdrA,gpu::kImgMbBake,1,0);
         report("HDR9 invalid motion timing cannot create blur",motion_math::ShutterScale(.035f,0)==0 && motion_math::ShutterScale(-1,.016f)==0 && motion_math::ShutterScale(.035f,-1)==0);
         mb.f0=glm::vec4(.5f,.5f,1,1);
@@ -1873,6 +1893,97 @@ bool HdrComposeRun(gpu::Device& dev) {
     dev.DestroyBindingLayout(frame_layout); dev.DestroyBindingLayout(empty_layout);
     dev.DestroySampler(linear_sampler); dev.DestroySampler(sampler); dev.DestroyBuffer(frame); dev.DestroyImage(output.image);
     for (auto& input : inputs) dev.DestroyImage(input);
+    return ok;
+}
+
+
+// Test the real mesh velocity shaders, including skeletal history and jitter.
+// Current/previous object poses must share the current camera in object-only mode.
+bool MotionVelocityRun(gpu::Device& dev) {
+    constexpr uint32_t w=64,h=64;
+    TextureManager textures;
+    if(!textures.Init(dev)) return false;
+    MaterialGpu material; material.flags=gpu::kMatConstantColor;
+    const uint32_t material_id=textures.AddMaterial(material);
+    gpu::BindingLayoutDesc fd;
+    fd.bindings={{0,gpu::BindingType::StorageBuffer,1,gpu::ShaderStage::All},
+                 {1,gpu::BindingType::StorageBuffer,1,gpu::ShaderStage::All}};
+    const auto frame_layout=dev.CreateBindingLayout(fd);
+    gpu::BindingPoolDesc pool_desc;pool_desc.max_sets=1;pool_desc.sizes={{gpu::BindingType::StorageBuffer,2}};
+    const auto pool=dev.CreateBindingPool(pool_desc);
+    const auto set=dev.AllocateBindingSet(pool,frame_layout);
+    gpu::BufferResource frame,skin,vertices;
+    bool ok=dev.CreateBuffer({sizeof(gpu::FrameData),gpu::BufferUsage::StorageBuffer,true},frame) &&
+        dev.CreateBuffer({3*sizeof(glm::mat4),gpu::BufferUsage::StorageBuffer,true},skin) &&
+        dev.CreateBuffer({3*sizeof(Vertex),gpu::BufferUsage::VertexBuffer,true},vertices);
+    if(!ok) return false;
+    std::array<Vertex,3> triangle;
+    triangle[0].position={-.8f,-.8f,.5f};triangle[1].position={.8f,-.8f,.5f};triangle[2].position={0,.8f,.5f};
+    for(auto& v:triangle) v.weights.x=255;
+    std::memcpy(vertices.mapped,triangle.data(),sizeof(triangle));dev.FlushMapped(vertices,0,~0ull);
+    const gpu::BufferBinding buffers[]={{frame.buffer,0,~0ull},{skin.buffer,0,~0ull}};
+    for(uint32_t i=0;i<2;++i) {
+        gpu::BindingWrite write;write.set=set;write.binding=i;write.type=gpu::BindingType::StorageBuffer;
+        write.buffers=std::span(&buffers[i],1);dev.WriteBindings({&write,1});
+    }
+    gpu::PipelineLayoutDesc ld;ld.sets={textures.BindingLayout(),frame_layout};ld.push_bytes=sizeof(gpu::DrawPush);
+    const auto layout=dev.CreatePipelineLayout(ld);
+    gpu::GraphicsPipelineDesc pd;pd.layout=layout;pd.vertex="velocity.vert";pd.fragment="velocity.frag";
+    pd.mesh_input=true;pd.colors={gpu::Format::R32G32B32A32Sfloat};pd.cull=gpu::CullMode::None;
+    const auto pipeline=dev.CreateGraphicsPipeline(pd);
+    gpu::RenderTarget target;gpu::ImageDesc td;td.format=pd.colors[0];td.extent={w,h,1};
+    td.usage=gpu::ImageUsage::ColorAttachment|gpu::ImageUsage::TransferSrc;
+    ok=pipeline && dev.CreateImage(td,target.image) && ok;
+    for(int camera=0;camera<4 && ok;++camera) for(int pose=0;pose<4 && ok;++pose)
+    for(int full=0;full<2 && ok;++full) for(int jitter=0;jitter<2 && ok;++jitter) {
+        glm::mat4 current(1),previous(1),history[3]={glm::mat4(1),glm::mat4(1),glm::mat4(1)};
+        // Translation, rotation, and projection changes; all keep the plane z=.5.
+        if(camera==1) current[3].x=.03f;
+        if(camera==2) {current[0]={.9950042f,.0998334f,0,0};current[1]={-.0998334f,.9950042f,0,0};}
+        if(camera==3) {current[0][0]=1.05f;current[1][1]=1.05f;current[2][3]=.2f;}
+        const glm::vec2 displacement=(pose==1 || pose==2)?glm::vec2(.02f,-.01f):glm::vec2(0);
+        if(pose==1) history[0][3]=glm::vec4(-displacement,0,1);
+        if(pose==2) history[2][3]=glm::vec4(-displacement,0,1);
+        if(pose==3) {history[0][0]={.9998f,.0199987f,0,0};history[0][1]={-.0199987f,.9998f,0,0};}
+        auto* data=static_cast<gpu::FrameData*>(frame.mapped);*data=gpu::FrameData{};
+        const glm::vec2 offset=jitter?glm::vec2(.007f,-.011f):glm::vec2(0);
+        glm::mat4 raster=current;
+        for(int c=0;c<4;++c) {raster[c][0]+=offset.x*current[c][3];raster[c][1]+=offset.y*current[c][3];}
+        data->views[0].view_projection=raster;data->views[0].jitter=glm::vec4(offset,0,0);
+        data->views[1].view_projection=previous;
+        std::memcpy(skin.mapped,history,sizeof(history));dev.FlushMapped(skin,0,~0ull);dev.FlushMapped(frame,0,~0ull);
+        gpu::DrawPush push;push.ids={0,material_id,1,pose==2?1u:gpu::kInvalid};
+        push.aux[0]={std::bit_cast<float>(0u),std::bit_cast<float>(pose==2?2u:gpu::kInvalid),float(full),0};
+        dev.Submit([&](gpu::CommandList& cmd) {
+            cmd.UseTargets({{&target,gpu::Layout::ColorAttachment}});cmd.BeginPass({w,h},{{&target,true,{}}});
+            cmd.BindPipeline(gpu::BindPoint::Graphics,pipeline);
+            const gpu::BindingSetHandle sets[]={textures.BindingSet(),set};cmd.BindSets(gpu::BindPoint::Graphics,layout,0,sets);
+            cmd.BindVertexBuffer(vertices.buffer,0);cmd.PushConstants(layout,gpu::ShaderStage::All,0,sizeof(push),&push);
+            cmd.Draw(3,1,0,0);cmd.EndPass();cmd.UseTargets({{&target,gpu::Layout::TransferSrc}});
+        });
+        std::vector<uint8_t> bytes;ok=dev.ReadImage(target,bytes) && bytes.size()==w*h*sizeof(glm::vec4);
+        size_t covered=0;float error=0;
+        for(uint32_t y=0;y<h && ok;++y) for(uint32_t x=0;x<w;++x) {
+            glm::vec4 actual;std::memcpy(&actual,bytes.data()+(y*w+x)*sizeof(actual),sizeof(actual));
+            if(actual.x<.5f) continue;
+            ++covered;
+            const glm::vec2 ndc=glm::vec2(2*(x+.5f)/w-1,2*(y+.5f)/h-1)-offset;
+            const glm::vec4 plane=current*glm::vec4(0,0,.5f,1);
+            glm::vec4 world=glm::inverse(current)*glm::vec4(ndc,plane.z/plane.w,1);world/=world.w;
+            world=history[0]*(pose==2?history[2]*world:world);
+            const glm::vec4 before=(full?previous:current)*world;
+            glm::vec2 expected=(ndc-glm::vec2(before)/before.w)*.5f*glm::vec2(15,8.4375f);
+            if(glm::length(expected)>1) expected=glm::normalize(expected);
+            error=std::max(error,glm::length(glm::vec2(actual.z,actual.w)-expected));
+        }
+        // Rasterizer subpixel snapping perturbs interpolated rotational velocity.
+        // Keep the stationary object-only invariant tighter than that tolerance.
+        ok=ok && covered>500 && error<(pose==0 && !full ? 2e-6f : 1e-4f);
+        if(!ok) std::printf("motion projection camera %d pose %d full %d jitter %d covered %zu error %.8g\n",camera,pose,full,jitter,covered,error);
+    }
+    dev.WaitIdle();dev.DestroyImage(target.image);dev.DestroyPipeline(pipeline);dev.DestroyPipelineLayout(layout);
+    dev.DestroyBuffer(vertices);dev.DestroyBuffer(skin);dev.DestroyBuffer(frame);
+    dev.DestroyBindingPool(pool);dev.DestroyBindingLayout(frame_layout);textures.Shutdown();
     return ok;
 }
 
@@ -2230,6 +2341,8 @@ int main(int argc, char** argv) {
     std::unique_ptr<GpuRunner> rhi_vulkan = vk_device ? std::make_unique<GpuRunner>(*vk_device) : nullptr;
     Check(HdrComposeRun(*device), "D3D12 production compose/bloom/LUT/DOF/motion blur preserve HDR radiance, linear filtering and SDR bounds");
     Check(vk_device && HdrComposeRun(*vk_device), "Vulkan production compose/bloom/LUT/DOF/motion blur preserve HDR radiance, linear filtering and SDR bounds");
+    Check(MotionVelocityRun(*device), "D3D12 object-only/full rigid and skeletal motion, camera changes and jitter");
+    Check(vk_device && MotionVelocityRun(*vk_device), "Vulkan object-only/full rigid and skeletal motion, camera changes and jitter");
     std::vector<Case> cases = {CompositeCase(true), CompositeCase(false), XrCopyCase(), UiCase(), CullCase(gpu::CullMode::Back),
                                CullCase(gpu::CullMode::Front)};
     Case rcas = CompositeCase(false);

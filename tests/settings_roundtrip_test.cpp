@@ -60,6 +60,15 @@ int main(int argc, char** argv) {
     const std::filesystem::path ini = dir / "roundtrip.ini";
 
     Check("defaults", Same(RoundTrip(ini, {}), {}));
+    for (const char* legacy : {"0", "1", "false", "true", "off", "on"}) {
+        const auto g = LoadText(ini, std::string("[graphics]\nmotion_blur=") + legacy + "\n").graphics;
+        Check("legacy motion blur retains full camera/object mode", g.camera_motion_blur &&
+            g.motion_blur == (std::string(legacy)=="1" || std::string(legacy)=="true" || std::string(legacy)=="on"));
+    }
+    for (bool enabled : {false, true}) for (bool camera : {false, true}) {
+        pt::AppSettings s; s.graphics.motion_blur=enabled; s.graphics.camera_motion_blur=camera;
+        Check("decoupled motion blur persists", Same(RoundTrip(ini,s),s));
+    }
     {
         pt::AppSettings chosen;
         chosen.display.hdr_ui_brightness = 120;
@@ -183,7 +192,7 @@ int main(int argc, char** argv) {
         {"audio.controller_speaker_volume", [](auto& s) { s.audio.controller_speaker_volume = 0.25f; }},
         {"audio.surround", [](auto& s) { s.audio.surround = true; }},
         {"audio.output_device", [](auto& s) { s.audio.output_device = "Speakers (DualSense Wireless Controller)"; }},
-        {"audio.output_device unicode", [](auto& s) { s.audio.output_device = "耳机 (Realtek(R) Audio)"; }},
+        {"audio.output_device unicode", [](auto& s) { s.audio.output_device = "Ã¨â‚¬Â³Ã¦Å“Âº (Realtek(R) Audio)"; }},
         {"input.rumble_profile", [](auto& s) { s.input.rumble_profile = 1; }},
         {"vr.height_offset", [](auto& s) { s.vr.height_offset = -0.2f; }},
         {"vr.world_size", [](auto& s) { s.vr.world_size = 1.5f; }},
@@ -223,6 +232,7 @@ int main(int argc, char** argv) {
         {"graphics.bloom", [](auto& s) { s.graphics.bloom = false; s.graphics.bloom_strength=0; }},
         {"graphics.depth_of_field", [](auto& s) { s.graphics.depth_of_field = false; }},
         {"graphics.motion_blur", [](auto& s) { s.graphics.motion_blur = false; }},
+        {"graphics.camera_motion_blur", [](auto& s) { s.graphics.camera_motion_blur = false; }},
         {"graphics.lens_distortion", [](auto& s) { s.graphics.lens_distortion = false; }},
         {"graphics.lens_ghosts", [](auto& s) { s.graphics.lens_ghosts = false; s.graphics.ghost_strength=0; }},
         {"graphics.deband", [](auto& s) { s.graphics.deband = true; }},

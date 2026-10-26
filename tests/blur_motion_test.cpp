@@ -77,7 +77,7 @@ int main() {
           close(scene.blur_previous_view_projection_, scene.previous_view_projection_) && !scene.blur_rates_valid_);
     camera.position.x += 4.0f;
     scene.UpdateMotion(camera, dt);
-    check("camera cuts have no filtered motion", scene.up_.reset && glm::length(scene.blur_rates_) == 0.0f &&
+    check("camera cuts have no filtered motion", scene.up_.reset && !scene.motion_history_valid_ && glm::length(scene.blur_rates_) == 0.0f &&
           glm::length(scene.blur_velocity_) == 0.0f && close(scene.blur_previous_view_projection_, scene.previous_view_projection_));
     std::printf("%d failures\n", failures);
     return failures ? 1 : 0;

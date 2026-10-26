@@ -8,7 +8,11 @@ Download the **[Windows installer](https://github.com/hartapfel/pt-pc-hdr/releas
 
 Enable HDR on your OS and the game's HDR output, then set HDR peak brightness, HDR game brightness and HDR UI brightness for your display. Existing settings are preserved; select High or Ultra to apply the new effect defaults. Report fork-specific issues [here](https://github.com/hartapfel/pt-pc-hdr/issues).
 
-## Latest HDR revision: 1.0.8.2-hdr
+## Latest HDR revision: 1.0.8.3-hdr
+
+Motion blur now offers **Camera + object** (default), **Object only**, and **Off**, in that order. Object-only blur uses rigid/skinned object motion vectors with camera movement removed before velocity clamping. Temporal jitter and camera cuts no longer create false blur. Existing saved On/Off choices are preserved. See [motion blur modes](docs/hdr-motion-blur.md).
+
+Retained from 1.0.8.2-hdr:
 
 - Restore the original upstream shadow toe in SDR and HDR, removing the custom Smooth adjustment. Old `shadow_toe` settings cannot reactivate it.
 - Preserve separate SDR EOTF emulation, with Gamma 2.2 as the default. SDR retains its original brightness slider; HDR uses neutral scene response independently of that slider.
@@ -29,7 +33,7 @@ HDR fork releases use `<upstream version>.<fork revision>-hdr`; the initial `1.0
 - Correct effect ordering, temporal history and HDR output composition, including the frame-generation output path.
 - Simplify the effect menu. Original (PS4) restores vanilla effect strengths and grain. High/Ultra use bloom 100%, flare 50%, ghosts 25%, improved grain 50%.
 
-See [HDR implementation](docs/hdr-native.md), [post-processing](docs/hdr-postprocess.md), [optics](docs/hdr9-optics.md), and [build/release instructions](docs/hdr-build.md). HDR1–HDR9 in technical documents are internal development revisions; the current public version is **1.0.8.2-hdr**. See [HDR color grading](docs/hdr-color-grading.md) for the new controls and validation.
+See [HDR implementation](docs/hdr-native.md), [post-processing](docs/hdr-postprocess.md), [optics](docs/hdr9-optics.md), and [build/release instructions](docs/hdr-build.md). HDR1–HDR9 in technical documents are internal development revisions; the current public version is **1.0.8.3-hdr**. See [HDR color grading](docs/hdr-color-grading.md) for the new controls and validation.
 
 ## Build and attribution
 

@@ -2434,7 +2434,7 @@ void SceneRenderer::RecordObjectVelocity(gpu::CommandList& cmd, const ViewSetup&
         push.ids = glm::uvec4(view.index, d.material, motion_view_, sub.skinned ? d.skin_base : gpu::kInvalid);
         push.tint = d.tint;
         const uint32_t previous_skin = sub.skinned ? d.previous_skin : gpu::kInvalid;
-        push.aux[0] = glm::vec4(std::bit_cast<float>(d.previous_model), std::bit_cast<float>(previous_skin), 0.0f, 0.0f);
+        push.aux[0] = glm::vec4(std::bit_cast<float>(d.previous_model), std::bit_cast<float>(previous_skin), graphics.camera_motion_blur ? 1.0f : 0.0f, 0.0f);
         PushConstants(cmd, &push, sizeof(push));
         cmd.DrawIndexed(sub.index_count, 1, sub.first_index, sub.vertex_offset, 0);
     }

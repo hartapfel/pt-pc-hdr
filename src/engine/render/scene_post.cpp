@@ -404,6 +404,7 @@ void SceneRenderer::UpdateMotion(const Camera& camera, float dt) {
     if (glm::distance(previous.position, camera.position) > kCameraCutDistance || glm::dot(previous.Forward(), camera.Forward()) < 0.7071f) {
         previous = camera;
         up_.reset = true;
+        motion_history_valid_ = false;
         cut = true;
     }
     if (!motion_history_valid_) {
@@ -458,7 +459,7 @@ bool SceneRenderer::RecordMotionBlur(gpu::CommandList& cmd, const ScreenSettings
     const uint32_t blur_image = gpu::kImgMbOriginalBlurA;
     gpu::PassPush push;
     push.ids = glm::uvec4(gpu::kImgObjectVelocity, 0, 0, post_view_);
-    push.f0 = glm::vec4(1920.0f / 128.0f, 1080.0f / 128.0f, std::min(1.0f, static_cast<float>(frame_time_) * 30.0f), 0.0f);
+    push.f0 = glm::vec4(1920.0f / 128.0f, 1080.0f / 128.0f, std::min(1.0f, static_cast<float>(frame_time_) * 30.0f), graphics.camera_motion_blur ? 1.0f : 0.0f);
     push.m = blur_previous_view_projection_;
     cmd.UseTargets({{&depth_, gpu::Layout::DepthReadOnly}});
     PostPass(cmd, velocity_, mb_velocity_, push);
