@@ -3834,7 +3834,6 @@ public:
         case kBloomType: s.graphics.bloom_type=std::clamp(value,0,1);break;
         case kFlareType: s.graphics.flare_type=std::clamp(value,0,1);break;
         case kLutSampling: s.graphics.lut_sampling=std::clamp(value,0,1);break;
-        case kShadowToe: s.graphics.shadow_toe=std::clamp(value,0,1);break;
         case kPostSampling: s.graphics.post_sampling=std::clamp(value,0,1);break;
         case kSharpeningType: s.graphics.sharpening_type=std::clamp(value,0,1);break;
         case kBloomStrength: s.graphics.bloom_strength=std::clamp(value,0,8)*.25f;s.graphics.bloom=value>0;break;
@@ -4387,7 +4386,7 @@ private:
         kRtReflections,
         kGraphicsPreset,kRayTracing,kLighting,kTextures,kEffects,
         kShadowQuality,kRasterAo,kRasterReflections,kRayQuality,kTextureDetail,
-        kBloom,kBloomType,kFlareType,kLutSampling,kShadowToe,kPostSampling,kSharpeningType,kBloomStrength,kFlareStrength,kLensGhosts,kDepthOfField,kMotionBlur,kFilmGrain,kFilmGrainType,kClarity,kLensDistortion,kLetterbox,
+        kBloom,kBloomType,kFlareType,kLutSampling,kPostSampling,kSharpeningType,kBloomStrength,kFlareStrength,kLensGhosts,kDepthOfField,kMotionBlur,kFilmGrain,kFilmGrainType,kClarity,kLensDistortion,kLetterbox,
         kMods,
         kLoopBrowser, kExtras, kFreecam, kPhotoMode, kStreetWalk, kStreetRestart, kStreetLeave, kLoopLock, kThirdPerson, kGamePlus, kSpeedrun, kLiveSplit, kRunMenu, kRunReal, kRunGame, kRunBest,
         kArchive, kArchiveLock,

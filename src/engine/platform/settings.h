@@ -109,7 +109,6 @@ struct AppSettings {
         int bloom_type = 1; // 0 Original, 1 Enhanced.
         int flare_type = 1; // 0 Original, 1 Enhanced.
         int lut_sampling = 1; // 0 Original, 1 Enhanced.
-        int shadow_toe = 1; // 0 Original, 1 Enhanced.
         int post_sampling = 1; // 0 Original, 1 Enhanced.
         int sharpening_type = 1; // 0 Original, 1 Enhanced.
         float bloom_strength = 1.0f;

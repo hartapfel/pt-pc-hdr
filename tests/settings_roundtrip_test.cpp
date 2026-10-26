@@ -120,9 +120,10 @@ int main(int argc, char** argv) {
     }
     {
         const auto g=LoadText(ini,"[graphics]\nbloom_type=99\nflare_type=-1\nlut_sampling=99\nshadow_toe=-3\npost_sampling=12\nsharpening_type=-2\nbloom_strength=nan\nflare_strength=9\n").graphics;
-        Check("invalid post settings bounded",g.bloom_type==1 && g.flare_type==1 && g.lut_sampling==1 && g.shadow_toe==1 && g.post_sampling==1 && g.sharpening_type==1 && g.bloom_strength==1.0f && g.flare_strength==2.0f);
+        Check("invalid post settings bounded",g.bloom_type==1 && g.flare_type==1 && g.lut_sampling==1 && g.post_sampling==1 && g.sharpening_type==1 && g.bloom_strength==1.0f && g.flare_strength==2.0f);
     }
 
+    Check("obsolete smooth toe cannot change defaults", Same(LoadText(ini,"[graphics]\nshadow_toe=1\n"),LoadText(ini,"[graphics]\nshadow_toe=0\n")));
     Check("old disabled bloom migrates to zero intensity",LoadText(ini,"[graphics]\nbloom=0\nbloom_strength=1\n").graphics.bloom_strength==0);
     Check("old disabled ghosts migrate to zero intensity",LoadText(ini,"[graphics]\nlens_ghosts=0\n").graphics.ghost_strength==0);
     Check("new ghost intensity overrides old switch",LoadText(ini,"[graphics]\nlens_ghosts=0\nghost_strength=1.5\n").graphics.ghost_strength==1.5f);

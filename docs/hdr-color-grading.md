@@ -224,3 +224,34 @@ steps. For a neutral SDR/HDR range comparison use SDR brightness 7/10, Original
 HDR grading, and matched display white/EOTF; otherwise SDR correctly reflects
 the user's brightness choice. Neither switching HDR nor selecting a grading
 preset rewrites that saved SDR choice.
+
+## Vanilla shadow response restored (1.0.8.2-hdr)
+
+This supersedes the smooth-toe behavior described above and in the HDR7/HDR8
+historical audit. Upstream v1.0.8 (`3b1392a:shaders/tonemap_curve.glsl`) already
+contains `r / sqrt(max(1/512, r))`. Its linear segment near black and square-root
+segment above the knee resemble an approximate encoding curve, but it is not
+IEC sRGB. The input is already encoded by `SrgbEncode` in the upstream tonemap
+pass; treating this extra operation as the sole linear-to-sRGB encoding would
+misidentify its domain. Exact sRGB encoding instead uses slope 12.92 below
+0.0031308 and `1.055 * L^(1/2.4) - 0.055` above that threshold.
+Reference: [ICC sRGB registry](https://registry.color.org/rgb-registry/srgb).
+
+The fork's smoothstep transition was a custom change to this vanilla response,
+not a standards-based EOTF correction. It is now removed. SDR uses the upstream
+ScreenTonemap function verbatim; HDR retains the equivalent vanilla toe with
+no SDR ceiling, following its existing additive linear-light bloom operation.
+Old `shadow_toe` settings and the former frame flag cannot reactivate smoothing.
+The SDR brightness slider, HDR neutral brightness, user grading controls, LUTs,
+post-effect order, and standardized sRGB/gamma display-response emulation are
+unchanged. Exact sRGB replaces neither the authored toe nor the whole tonemap.
+
+Validation uses the production GPU branches against the upstream analytic
+reference, including black, monotonicity, and the now-unused smooth flag.
+
+Local Release build and all six selected regressions pass: settings roundtrip,
+graphics presets, composite output, native settings refresh, HDR pipeline, and
+D3D12/Vulkan backend. The upstream SDR function is preserved textually verbatim.
+Both backends pass 256-sample vanilla shadow checks for both values of the
+obsolete frame flag, with exact black and monotonic output. Evidence and a
+pre-change source backup are in `pt-pc-hdr-work/vanilla-shadow-toe`.

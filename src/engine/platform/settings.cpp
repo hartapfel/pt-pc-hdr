@@ -188,7 +188,7 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
     out.graphics.bloom_type = 1; // HDR8: enhanced path, including old configuration files.
     out.graphics.flare_type = 1; // HDR8: enhanced path, including old configuration files.
     out.graphics.lut_sampling = 1; // HDR8: enhanced path, including old configuration files.
-    out.graphics.shadow_toe = 1; // HDR8: enhanced path, including old configuration files.
+    // Obsolete shadow_toe entries are ignored: preserve the vanilla response.
     out.graphics.post_sampling = 1; // HDR8: enhanced path, including old configuration files.
     out.graphics.sharpening_type = 1; // HDR8: enhanced path, including old configuration files.
     Read(v, "graphics.bloom_strength", out.graphics.bloom_strength);
@@ -295,7 +295,6 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
     out.graphics.bloom_type = std::clamp(out.graphics.bloom_type, 0, 1);
     out.graphics.flare_type = std::clamp(out.graphics.flare_type, 0, 1);
     out.graphics.lut_sampling = std::clamp(out.graphics.lut_sampling, 0, 1);
-    out.graphics.shadow_toe = std::clamp(out.graphics.shadow_toe, 0, 1);
     out.graphics.post_sampling = std::clamp(out.graphics.post_sampling, 0, 1);
     out.graphics.sharpening_type = std::clamp(out.graphics.sharpening_type, 0, 1);
     out.graphics.bloom_strength = std::isfinite(out.graphics.bloom_strength) ? std::clamp(out.graphics.bloom_strength, 0.0f, 2.0f) : 1.0f;
@@ -503,7 +502,6 @@ bool SaveAppSettings(const std::filesystem::path& path, const AppSettings& s) {
          << "bloom_type = " << s.graphics.bloom_type << "\n"
          << "flare_type = " << s.graphics.flare_type << "\n"
          << "lut_sampling = " << s.graphics.lut_sampling << "\n"
-         << "shadow_toe = " << s.graphics.shadow_toe << "\n"
          << "post_sampling = " << s.graphics.post_sampling << "\n"
          << "sharpening_type = " << s.graphics.sharpening_type << "\n"
          << "bloom_strength = " << s.graphics.bloom_strength << "\n"

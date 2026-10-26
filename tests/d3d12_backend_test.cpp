@@ -1659,8 +1659,8 @@ bool HdrComposeRun(gpu::Device& dev) {
     }
     gpu::ImageResource dark_image;
     ok=runner.Upload(dark,dark_image) && ok; bind_image(gpu::kImgHdr,dark_image);
-    for (int toe=0;toe<2 && ok;++toe) {
-        static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=float(toe);
+    for (int reserved=0;reserved<2 && ok;++reserved) {
+        static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=float(reserved); // Old smooth flag must have no effect.
         std::vector<glm::vec4> sdr_shadow;
         float max_difference=0;
         for (int hdr=0;hdr<2 && ok;++hdr) {
@@ -1668,12 +1668,9 @@ bool HdrComposeRun(gpu::Device& dev) {
             ok=draw_post("tonemap.frag",p,hdr,&post_result) && ok;
             float previous=-1;
             for(uint32_t x=0;x<width && ok;++x) {
-                const float c=.1f*x/(width-1), k=std::sqrt(1.f/512.f);
-                float expected=c*c/std::max(c,k);
-                if(toe && c>.5f*k) {
-                    float t=std::clamp((c-.5f*k)/k,0.f,1.f);
-                    expected=c-.25f*k*(1-t*t*(3-2*t));
-                }
+                const float c=.1f*x/(width-1), r=c*c;
+                // Independent reference: upstream v1.0.8 ScreenTonemap, zero bloom.
+                const float expected=r/std::sqrt(std::max(1.f/512.f,r));
                 for(int channel=0;channel<3;++channel) {
                     ok=ok && std::abs(post_result[x][channel]-expected)<2e-6f;
                     if(hdr) max_difference=std::max(max_difference,std::abs(post_result[x][channel]-sdr_shadow[x][channel]));
@@ -1685,8 +1682,8 @@ bool HdrComposeRun(gpu::Device& dev) {
             if(!hdr) sdr_shadow=post_result;
         }
         ok=ok && max_difference<2e-6f;
-        std::printf("SDR/HDR %s shadow parity: max encoded RGB difference %.9g (%u samples)\n",
-                    toe ? "smooth" : "original",max_difference,width);
+        std::printf("SDR/HDR vanilla shadow parity (reserved flag %d): max encoded RGB difference %.9g (%u samples)\n",
+                    reserved,max_difference,width);
     }
     static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=0;
     dev.DestroyImage(dark_image);

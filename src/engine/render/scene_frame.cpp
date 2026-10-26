@@ -1200,7 +1200,7 @@ void SceneRenderer::UploadFrame(FrameSlot& slot) {
     uint8_t* base = static_cast<uint8_t*>(slot.frame_data.mapped);
     std::memcpy(base + offsetof(gpu::FrameData, fog), frame_->fog, sizeof(frame_->fog));
     std::memcpy(base + offsetof(gpu::FrameData, mirror), &frame_->mirror, sizeof(frame_->mirror));
-    frame_->hdr_output = glm::vec4(hdr_scene_active_ ? 1.0f : 0.0f, graphics.post_sampling == 0 ? 1.0f : 0.0f, static_cast<float>(graphics.shadow_toe), 0.0f);
+    frame_->hdr_output = glm::vec4(hdr_scene_active_ ? 1.0f : 0.0f, graphics.post_sampling == 0 ? 1.0f : 0.0f, 0.0f, 0.0f);
     std::memcpy(base + offsetof(gpu::FrameData, hdr_output), &frame_->hdr_output, sizeof(frame_->hdr_output));
     std::memcpy(base + offsetof(gpu::FrameData, views), frame_->views, sizeof(gpu::View) * view_count_);
     std::memcpy(base + offsetof(gpu::FrameData, lights), frame_->lights, sizeof(gpu::Light) * light_upload_count_);
