@@ -191,3 +191,5 @@ comparing builds with PS4 references, identifying discrepancies, testing gamepla
 
 The project uses the original game assets from the player's own PS4 copy. Optional upscalers and neural rendering use
 machine-learning models when enabled.
+
+Native HDR pipeline, controls and validation: [implementation notes](docs/native-hdr.md).

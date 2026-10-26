@@ -18,9 +18,15 @@ struct UiDraw {
 layout(push_constant) uniform UiPush {
     vec2 inverse_extent;
     uint draw;
+    float eotf;
+    vec4 grade;
+    vec4 chroma;
+    vec4 extra; // blowout, reserved
+    vec4 ui;
 } push;
 
 #include "bindless.glsl"
+#include "hdr_color.glsl"
 layout(set = 0, binding = 0) uniform PT_TEXTURE2D_ARRAY textures[];
 layout(std430, set = 1, binding = 0) readonly buffer UiDraws {
     UiDraw draws[];
@@ -82,8 +88,11 @@ vec4 ShadeBorder(UiDraw d) {
 }
 
 vec3 SceneDisplay(vec2 uv, UiDraw d) {
-    vec3 hdr = texture(scene_color, uv).rgb * d.extra2.x;
-    return pow(clamp(hdr, 0.0, 1.0), vec3(1.0 / max(d.extra2.y, 0.001)));
+    vec3 code = texture(scene_color, uv).rgb;
+    if (d.extra2.w <= 0.5) return clamp(code, 0.0, 1.0);
+    // This scene copy is drawn over the display-mapped base; match its mapping
+    // before the final shared EOTF/output pass, without re-exposing or decoding twice.
+    return MapHdrScene(code, 1.0, d.m[0].y, d.m[0].x, push.grade, push.chroma, push.extra);
 }
 
 vec4 ShadeNoise(UiDraw d) {
@@ -94,6 +103,10 @@ vec4 ShadeNoise(UiDraw d) {
     vec2 uv = clamp(in_uv + vec2((-0.001 + normal.w * 0.002) / across, -0.03 + normal.y * 0.06), vec2(0.0), vec2(1.0));
     vec3 screen = SceneDisplay(uv, d);
     float noise = Sample(d.textures.x, vec2(phase + noise_uv.x, noise_uv.y)).x;
+    if (d.extra2.w > 0.5) {
+        vec3 rgb = (mix(screen, vec3(noise), 0.1) + vec3(d.extra.z * 0.4, 0.0, 0.0)) * in_color.rgb;
+        return vec4(rgb, clamp(d.extra.w * in_color.a, 0.0, 1.0));
+    }
     vec3 rgb;
     rgb.r = clamp(clamp(d.extra.z * 0.4 + (noise - screen.r) * 0.1 + screen.r, 0.0, 1.0) * in_color.r, 0.0, 1.0);
     rgb.g = clamp(((noise - screen.g) * 0.1 + screen.g) * in_color.g, 0.0, 1.0);
@@ -124,4 +137,8 @@ void main() {
     } else {
         out_color = ShadeMaterial(d);
     }
+    // Scale interface light before alpha blending. Scene-copy horror effects
+    // (Noise/String) belong to gameplay and must not follow UI brightness.
+    if (push.ui.x != 1.0 && mode != 2u && mode != 3u)
+        out_color.rgb = EncodeSdrReference(DecodeSdrReference(out_color.rgb, push.eotf) * push.ui.x, push.eotf);
 }

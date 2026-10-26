@@ -20,6 +20,7 @@
 #include "engine/render/d3d12/present/dxgi_presenter.h"
 #include "engine/render/d3d12/present/sl_dlssg_presenter.h"
 #include "engine/render/d3d12/present/xefg_presenter.h"
+#include "engine/render/raytracing.h"
 
 namespace D3D12MA {
 class Allocator;
@@ -177,8 +178,8 @@ struct RootLayout {
         {135, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, UINT_MAX},
         {141, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 15},
         {142, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2},
-        {143, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 4},
-        {144, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 11},
+        {143, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, RayTracing::kPathImages32},
+        {144, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, RayTracing::kPathImages16},
     };
     static int ArrayParam(uint32_t set, uint32_t binding) {
         const uint32_t space = 100 + 16 * set + binding;

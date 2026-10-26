@@ -16,6 +16,9 @@ namespace {
 struct Push {
     glm::vec2 inverse_extent;
     uint32_t draw;
+    float eotf;
+    std::array<float, 12> grading;
+    glm::vec4 ui;
 };
 
 }
@@ -255,7 +258,10 @@ void UiBatch::RecordRange(gpu::CommandList& cmd, gpu::Extent2D extent, uint32_t 
             cmd.BindPipeline(gpu::BindPoint::Graphics, pipelines_[pipeline]);
             bound = pipeline;
         }
-        const Push push{glm::vec2(1.0f / std::max(1u, extent.width), 1.0f / std::max(1u, extent.height)), command.draw};
+        const bool hdr = renderer_->OutputMode() != RendererOutputMode::Sdr;
+        const Push push{glm::vec2(1.0f / std::max(1u, extent.width), 1.0f / std::max(1u, extent.height)), command.draw,
+                        float(renderer_->HdrSdrEotf()), renderer_->hdr_color.Push(hdr),
+                        glm::vec4(hdr ? std::min(float(renderer_->hdr_ui_brightness), renderer_->HdrPeak()) / renderer_->HdrPaperWhite() : 1.0f, 0, 0, 0)};
         cmd.PushConstants(layout_, gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment, 0, sizeof(push), &push);
         cmd.Draw(command.count, 1, command.first, 0);
     }

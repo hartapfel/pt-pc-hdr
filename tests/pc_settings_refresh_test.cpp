@@ -30,6 +30,8 @@ struct Source : PcSettingsSource {
     std::optional<PcSettingRow> footer;
     std::optional<PcSettingRow> FooterAction() override { return footer; }
     bool tabbed = false;
+    bool preview_whole = false;
+    bool PreviewWholePage() const override { return preview_whole; }
     int activated = -1;
     std::vector<PcSettingSection> Sections() override { return {{"section", 0, rows}}; }
     void Set(int, int) override {}
@@ -60,6 +62,28 @@ int main() {
     using namespace pt::game;
     auto context = std::make_unique<Context>();
     Game& game = context->game;
+    {
+        Source source;
+        source.preview_whole=true;
+        source.rows[0].enabled=false;
+        PcSettingsPage page;
+        page.Open(&source);
+        page.Focus("first");
+        Check(page.ScenePreviewActive(), "whole-page preview survives disabled row focus");
+        page.Focus("focused");
+        MenuInput down; down.held_dirs=pt::kRawDown;
+        page.Update(game,down,1.f/30.f);
+        Check(!page.CurrentRow() && page.ScenePreviewActive(), "whole-page preview survives Back focus");
+        source.preview_whole=false;
+        Check(!page.ScenePreviewActive(), "preview toggle disables whole-page preview");
+        source.rows[0].preview_scene=true;
+        Tick(page);page.Focus("first");
+        Check(!page.ScenePreviewActive(), "row-only preview still excludes disabled rows");
+        source.rows[0].enabled=true;
+        Tick(page);
+        Check(page.ScenePreviewActive(), "enabled HDR row preview still works");
+    }
+
     {
         Source source;
         PcSettingsPage page;

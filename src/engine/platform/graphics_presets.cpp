@@ -23,6 +23,8 @@ void ApplyGraphicsPreset(AppSettings& s, GraphicsPreset preset, bool rt) {
         break;
     default: break;
     }
+    g.bloom_strength = g.bloom ? 1.0f : 0.0f;
+    g.ghost_strength = g.lens_ghosts ? 1.0f : 0.0f;
 }
 GraphicsPreset DetectGraphicsPreset(const AppSettings& s, bool rt) {
     for(auto p:{GraphicsPreset::Low,GraphicsPreset::Original,GraphicsPreset::High,GraphicsPreset::Ultra}) {

@@ -360,6 +360,7 @@ void GameUi::Update(Game& game, const InputState& input, float dt) {
     last_caption_ = fx.caption_id;
     last_caption_time_ = fx.caption_time;
 
+    menu_.SetHdrActive(renderer_ && renderer_->OutputMode() != RendererOutputMode::Sdr);
     menu_.SetPromptStyle(input.prompts);
     prompts_ = input.prompts;
     MenuInput menu_input = MapMenuInput(input, previous_held_, previous_dirs_);
@@ -690,9 +691,12 @@ void GameUi::DrawSubliminal(ui::UiBatch& batch, bool string_pass) {
     ui::UiDrawParams params = ui::UiDrawParams::Plain(noise_texture_);
     params.textures[1] = noise_normal_texture_;
     params.extra = glm::vec4(subliminal_.Phase(), 0.0f, subliminal_.NoiseB(), subliminal_.NoiseA());
-    const gpu::Format scene_format = renderer_ ? renderer_->SceneColorFormat() : Renderer::kSceneColorFormat;
-    const bool hdr_scene = scene_format == gpu::Format::R16G16B16A16Sfloat || scene_format == gpu::Format::R32G32B32A32Sfloat;
-    params.extra2 = hdr_scene ? glm::vec4(renderer_ ? renderer_->exposure : 1.0f, 2.2f, 0.0f, 0.0f) : glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+    // SceneColor contains post-process code values even when its storage is FP16.
+    const bool hdr_output = renderer_ && renderer_->OutputMode() != RendererOutputMode::Sdr;
+    params.extra2 = glm::vec4(1.0f, 1.0f, 0.0f, hdr_output ? 1.0f : 0.0f);
+    params.material[0].x = hdr_output ? renderer_->HdrPeak() / renderer_->HdrPaperWhite() : 1.0f;
+    params.material[0].y = renderer_ ? float(renderer_->HdrSdrEotf()) : 1.0f;
+    params.material[0].z = renderer_ ? renderer_->OutputBrightness() : 1.0f;
     params.extra2.z = across;
     batch.Quad(glm::vec2(0.0f), extent, glm::vec2(0.0f), glm::vec2(1.0f), glm::vec4(1.0f), params, ui::UiShade::Noise, ui::UiBlend::Alpha);
 }
@@ -1190,9 +1194,12 @@ void GameUi::Record(gpu::CommandList& cmd, gpu::ImageViewHandle target, gpu::Ext
         layers.push_back({LisaDate::kUiPriority, [&] {
                               ui::UiDrawParams noise = ui::UiDrawParams::Plain(noise_texture_);
                               noise.textures[1] = noise_normal_texture_;
-                              const gpu::Format scene_format = renderer_ ? renderer_->SceneColorFormat() : Renderer::kSceneColorFormat;
-                              const bool hdr_scene = scene_format == gpu::Format::R16G16B16A16Sfloat || scene_format == gpu::Format::R32G32B32A32Sfloat;
-                              noise.extra2 = hdr_scene ? glm::vec4(renderer_ ? renderer_->exposure : 1.0f, 2.2f, 0.0f, 0.0f) : glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+                              // SceneColor contains post-process code values even when its storage is FP16.
+                              const bool hdr_output = renderer_ && renderer_->OutputMode() != RendererOutputMode::Sdr;
+                              noise.extra2 = glm::vec4(1.0f, 1.0f, 0.0f, hdr_output ? 1.0f : 0.0f);
+                              noise.material[0].x = hdr_output ? renderer_->HdrPeak() / renderer_->HdrPaperWhite() : 1.0f;
+                              noise.material[0].y = renderer_ ? float(renderer_->HdrSdrEotf()) : 1.0f;
+                              noise.material[0].z = renderer_ ? renderer_->OutputBrightness() : 1.0f;
                               noise.extra2.z = full.y > 0.0f ? (full.x / full.y) / (16.0f / 9.0f) : 1.0f;
                               lisa_date_->DrawUi(batch, canvas, full, noise);
                           }});

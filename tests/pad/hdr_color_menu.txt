@@ -1,0 +1,180 @@
+# Native HDR menu regression. Use --headless --virtual-pads --audio-offline
+# --no-save --no-update-check --start-floor f010 --frames 3000, an isolated
+# --save-dir and clean settings with [display] hdr=1, hdr_paper_white=200.
+# Set PT_HDR_HEADLESS=scrgb (or hdr10) so no desktop HDR toggle is needed.
+# Checks disabled SDR brightness, Gamma 2.2 default, grade persistence across
+# refresh, and reset preserving independent game/UI brightness.
+0 sstep 15
+0 goto 0 0 12.5
+0 swait 10
+0 sfree
+0 sanchor
+0 gfile 0 -1.4 -4
+0 ffile 0 -0.2 7.5
+0 sev -4.1
+0 swait 40
+0 swait 6
+0 swait 8
+0 sui menu original
+0 swait 120
+0 sexpect page 0
+0 sexpect brightness 5
+0 sui menukey right
+0 swait 6
+0 sexpect brightness 5
+0 sui menukey left
+0 swait 6
+0 sexpect brightness 5
+0 swait 6
+0 sui menukey pc
+0 swait 120
+0 sexpect page 1
+0 sui pcfocus pc_hdr_sdr_eotf
+0 swait 6
+0 sexpect pcvalue pc_hdr_sdr_eotf 1
+0 sexpect pcvalue pc_hdr_grade_preset 0
+0 sui pcset pc_hdr_grade_preset 1
+0 swait 16
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sexpect pcvalue pc_hdr_highlights 29
+0 sexpect pcvalue pc_hdr_saturation 30
+0 sexpect pcvalue pc_hdr_wide_gamut 1
+0 sui pcset pc_hdr_exposure 41
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_exposure 40
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_contrast 21
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_contrast 20
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_highlights 28
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_highlights 29
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_shadows 21
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_shadows 20
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_saturation 29
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_saturation 30
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_highlight_saturation 21
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_highlight_saturation 20
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_blowout 1
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_blowout 0
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_wide_gamut 0
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 2
+0 sui pcset pc_hdr_wide_gamut 1
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 1
+0 sui pcset pc_hdr_grade_preset 0
+0 swait 6
+0 sexpect pcvalue pc_hdr_grade_preset 0
+0 sexpect pcvalue pc_hdr_highlights 20
+0 sexpect pcvalue pc_hdr_saturation 20
+0 swait 6
+0 sui pcset pc_hdr_menu_preview 0
+0 swait 8
+0 swait 6
+0 sui pcset pc_hdr_menu_preview 1
+0 sexpect pcvalue pc_hdr_wide_gamut 1
+0 sui pcfocus pc_hdr_exposure
+0 swait 8
+0 sexpect pcvalue pc_hdr_exposure 40
+0 sui pcset pc_hdr_wide_gamut 1
+0 sui pcset pc_hdr_saturation 30
+0 swait 8
+0 sexpect pcvalue pc_hdr_wide_gamut 1
+0 sexpect pcvalue pc_hdr_saturation 30
+0 swait 6
+0 sui pcset pc_hdr_saturation 20
+0 sui pcfocus pc_hdr_ui_brightness
+0 swait 8
+0 swait 6
+0 sui pcset pc_hdr_ui_brightness 4
+0 swait 8
+0 sexpect pcvalue pc_hdr_ui_brightness 4
+0 swait 6
+0 sui pcset pc_hdr_paper_white 22
+0 swait 8
+0 swait 6
+0 sui pcset pc_hdr_contrast 0
+0 swait 3
+0 sexpect pcvalue pc_hdr_contrast 0
+0 sui pcset pc_hdr_contrast 40
+0 swait 3
+0 sexpect pcvalue pc_hdr_contrast 40
+0 sui pcset pc_hdr_contrast 20
+0 sui pcset pc_hdr_highlights 0
+0 swait 3
+0 sexpect pcvalue pc_hdr_highlights 0
+0 sui pcset pc_hdr_highlights 40
+0 swait 3
+0 sexpect pcvalue pc_hdr_highlights 40
+0 sui pcset pc_hdr_highlights 20
+0 sui pcset pc_hdr_shadows 0
+0 swait 3
+0 sexpect pcvalue pc_hdr_shadows 0
+0 sui pcset pc_hdr_shadows 40
+0 swait 3
+0 sexpect pcvalue pc_hdr_shadows 40
+0 sui pcset pc_hdr_shadows 20
+0 sui pcset pc_hdr_saturation 0
+0 swait 3
+0 sexpect pcvalue pc_hdr_saturation 0
+0 sui pcset pc_hdr_saturation 40
+0 swait 3
+0 sexpect pcvalue pc_hdr_saturation 40
+0 sui pcset pc_hdr_saturation 20
+0 sui pcset pc_hdr_highlight_saturation 0
+0 swait 3
+0 sexpect pcvalue pc_hdr_highlight_saturation 0
+0 sui pcset pc_hdr_highlight_saturation 40
+0 swait 3
+0 sexpect pcvalue pc_hdr_highlight_saturation 40
+0 sui pcset pc_hdr_highlight_saturation 20
+0 sui pcset pc_hdr_blowout 0
+0 swait 3
+0 sexpect pcvalue pc_hdr_blowout 0
+0 sui pcset pc_hdr_blowout 20
+0 swait 3
+0 sexpect pcvalue pc_hdr_blowout 20
+0 sui pcset pc_hdr_blowout 0
+0 sui pcfocus pc_hdr_grade_reset
+0 sui menukey accept
+0 swait 12
+0 sexpect pcvalue pc_hdr_wide_gamut 1
+0 sexpect pcvalue pc_hdr_saturation 20
+0 sexpect pcvalue pc_hdr_ui_brightness 4
+0 sexpect pcvalue pc_hdr_paper_white 22
+0 sexpect pcvalue pc_hdr_blowout 0
+0 sexpect pcvalue pc_hdr_grade_preset 0
+0 sui pcfocus pc_bloom_strength
+0 swait 12
+0 sui pcset pc_hdr_menu_preview 0
+0 swait 4
+0 sui pcset pc_hdr_menu_preview 1
+0 swait 4
+0 sui menukey close
+0 swait 120
+0 squit

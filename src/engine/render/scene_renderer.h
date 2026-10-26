@@ -75,6 +75,7 @@ struct SceneVfxContext {
     std::function<void()> copy_scene;
     glm::vec4 fog[8]{};
     uint32_t fog_mode = 0;
+    bool hdr_output = false;
     uint32_t subset = 0;
     uint32_t* recorded = nullptr;
 };
@@ -347,7 +348,7 @@ private:
     bool UploadImageMips(gpu::ImageResource& image, gpu::Format format, gpu::Extent3D extent, const std::vector<std::vector<uint8_t>>& mips);
     void CreateBuiltinResources();
     void UpdateColorLut(const ScreenSettings& screen);
-    bool BuildColorLut(const std::string& path, const ScreenSettings& screen, std::vector<uint8_t>& out);
+    bool BuildColorLut(const std::string& path, const ScreenSettings& screen, std::vector<float>& out);
 
     void PrepareFrame(const Camera& camera, const std::vector<DrawItem>& items, const SceneLighting& lighting);
     void BuildShadowViews(const SceneLighting& lighting, const glm::vec3& eye);
@@ -522,6 +523,7 @@ private:
     bool targets_upscaled_ = false;
     uint64_t neural_output_epoch_ = 1;
     bool history_valid_ = false;
+    bool hdr_scene_active_ = false;
 
     gpu::ImageResource lut1_;
     gpu::ImageResource lut2_;
@@ -557,7 +559,6 @@ private:
     gpu::PipelineHandle kawase_sum_;
     gpu::PipelineHandle gaussian_;
     gpu::PipelineHandle tonemap_;
-    gpu::PipelineHandle hdr_boost_pipeline_;
     gpu::PipelineHandle fxaa_;
     gpu::PipelineHandle mirror_temporal_pipeline_;
     gpu::PipelineHandle dof_ratio_;
@@ -769,19 +770,7 @@ private:
     Camera camera_;
 
     float ev_ = 0.0f;
-    double exposure_camera_dt_ = static_cast<double>(1.0f / 60.0f);
-    float exposure_previous_dt_ = 0.0f;
-    bool exposure_clock_started_ = false;
     double exposure_time_ = 0.0;
-    double exposure_updated_at_ = 0.0;
-    std::array<double, 5> exposure_tick_times_{};
-    uint32_t exposure_tick_index_ = 0;
-    double exposure_feedback_time_ = 0.0;
-    struct ExposureSample {
-        double time;
-        float luminance;
-    };
-    std::deque<ExposureSample> exposure_samples_;
     bool adaptation_valid_ = false;
     bool ev_pinned_ = false;
     float exposure_ = 1.0f;

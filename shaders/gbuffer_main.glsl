@@ -166,10 +166,10 @@ void main() {
         float h = Tex(m.aux2, uv).y;
         vec3 iris = Tex(m.aux0, uv - 0.25 * m.params.z * h * vec2(v_ts.x, -v_ts.y) / v_ts.z).rgb;
 #ifdef PT_PATH_GBUFFER
-        albedo = SrgbDecode(Saturate(mix(SrgbEncode(albedo), iris, 1.0 - pow(1.0 - h, 4.0))));
+        albedo = SrgbDecode(SceneRadiance(mix(SrgbEncode(albedo), iris, 1.0 - pow(1.0 - h, 4.0)), 1.0, frame.hdr_output.x > 0.5));
 #else
         vec3 sphere = Tex(floatBitsToUint(m.extra.x), vec2(0.5 - 0.5 * n.x, 0.5 - 0.5 * n.y)).rgb;
-        albedo = SrgbDecode(Saturate(sphere * srm.r + mix(SrgbEncode(albedo), iris, 1.0 - pow(1.0 - h, 4.0))));
+        albedo = SrgbDecode(SceneRadiance(sphere * srm.r + mix(SrgbEncode(albedo), iris, 1.0 - pow(1.0 - h, 4.0)), 1.0, frame.hdr_output.x > 0.5));
 #endif
     }
 #ifndef PT_PATH_GBUFFER
@@ -258,4 +258,17 @@ void main() {
     } else if (debug_mode == 3u) {
         out_albedo = vec4(in_color.rgb, 1.0);
     }
+    // The original UNORM targets silently clipped baked eye/hair/environment
+    // lighting. HDR stores their extended color and specular amplitude in FP16.
+    // Roughness, material indices, translucency and coverage remain bounded.
+    if (frame.hdr_output.x > 0.5) {
+        out_albedo.rgb = SrgbEncode(SceneRadiance(SrgbDecode(out_albedo.rgb), 1.0, true));
+        out_material.y = SceneRadiance(vec3(out_material.y), 1.0, true).x;
+    } else {
+        out_albedo.rgb = round(clamp(out_albedo.rgb, 0.0, 1.0) * 255.0) / 255.0;
+        out_material.y = round(clamp(out_material.y, 0.0, 1.0) * 255.0) / 255.0;
+    }
+    out_albedo.a = round(clamp(out_albedo.a, 0.0, 1.0) * 255.0) / 255.0;
+    out_material.xzw = round(clamp(out_material.xzw, 0.0, 1.0) * 255.0) / 255.0;
+
 }

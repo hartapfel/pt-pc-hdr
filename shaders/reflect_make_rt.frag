@@ -78,7 +78,7 @@ vec4 ShadeHit(uint record, uint primitive, vec2 bary, mat4x3 to_world, vec3 hit,
     }
     if (m.kind == KIND_CONSTANT || m.kind == KIND_SKY) {
         vec4 t = textureLod(PT_TEX2D(m.albedo), uv, 2.0);
-        return vec4(min(vec3(32.0), m.albedo_factor.rgb * t.rgb * m.params.y * v.exposure.x) * Saturate(m.albedo_factor.a * t.a), 1.0);
+        return vec4(SceneRadiance(m.albedo_factor.rgb * t.rgb * m.params.y * v.exposure.x, 32.0, frame.hdr_output.x > 0.5) * Saturate(m.albedo_factor.a * t.a), 1.0);
     }
     if (m.kind != KIND_DEFERRED) {
         return vec4(0.0);
@@ -208,7 +208,7 @@ vec4 TracedLayers(vec3 origin, vec3 ray, float t_end) {
         if (m.kind == KIND_CONSTANT) {
             vec2 uv = HitUv(record, rayQueryGetIntersectionPrimitiveIndexEXT(rq, true), rayQueryGetIntersectionBarycentricsEXT(rq, true));
             vec4 t = textureLod(PT_TEX2D(m.albedo), uv, 2.0);
-            vec3 c = min(vec3(32.0), m.albedo_factor.rgb * t.rgb * m.params.y * v.exposure.x);
+            vec3 c = SceneRadiance(m.albedo_factor.rgb * t.rgb * m.params.y * v.exposure.x, 32.0, frame.hdr_output.x > 0.5);
             float a = Saturate(m.albedo_factor.a * t.a);
             sum += seen * c * a;
             seen *= 1.0 - a;

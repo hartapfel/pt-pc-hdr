@@ -55,6 +55,13 @@ int main(int argc,char** argv) {
                 pt::AppSettings written;
                 pt::ApplyGraphicsPreset(written, preset, rt);
                 check("save preset for legacy options", pt::SaveAppSettings(path, written));
+                // Simulate an upstream configuration without any of the new controls.
+                std::string legacy; { std::ifstream in(path); std::stringstream ss; ss << in.rdbuf(); legacy=ss.str(); }
+                for (const char* key : {"film_grain_type = ","bloom_strength = ","flare_strength = ","ghost_strength = "}) {
+                    const auto at=legacy.find(key);
+                    if(at!=std::string::npos) legacy.erase(at,legacy.find('\n',at)+1-at);
+                }
+                { std::ofstream out(path); out << legacy; }
                 { std::ofstream out(path, std::ios::app); out << "\n[graphics]\nenhanced_textures=1\n[display]\npause_on_focus_loss=1\nmute_in_background=1\n"; }
                 pt::AppSettings loaded;
                 check("legacy options preserve preset and ordinary texture settings", pt::LoadAppSettings(path, loaded) &&
@@ -106,7 +113,7 @@ int main(int argc,char** argv) {
             if(custom) written.graphics.bloom=false;
             if(!pt::SaveAppSettings(path,written)) return -1;
             std::string text;{std::ifstream in(path);std::stringstream ss;ss<<in.rdbuf();text=ss.str();}
-            {const auto at=text.find("ray_quality = ");if(at==std::string::npos) return -1;text.replace(at,text.find('\n',at)-at,"ray_quality = 2");}
+            {const auto key=text.find("\nray_quality = ");if(key==std::string::npos) return -1;const auto at=key+1;text.replace(at,text.find('\n',at)-at,"ray_quality = 2");}
             for(const char* key:{"full_shadows = ","bounce_light = ","glossy_reflections = "}) {
                 const auto at=text.find(key);if(at==std::string::npos) return -1;
                 text.erase(at,text.find('\n',at)+1-at);
@@ -115,7 +122,7 @@ int main(int argc,char** argv) {
             pt::AppSettings loaded;if(!pt::LoadAppSettings(path,loaded)) return -1;
             return loaded.graphics.ray_quality*10+(pt::DetectGraphicsPreset(loaded,rt)==pt::GraphicsPreset::Ultra?1:0);
         };
-        check("an Ultra pt.ini from before Full reads as Ultra with Full",before_full(true,false)==31);
+        check("legacy Ultra ray quality stays distinct from the path-traced preset",before_full(true,false)==30);
         check("a custom pt.ini from before Full reads as the new Ultra",before_full(true,true)==30);
         check("an Ultra pt.ini without ray tracing from before Full stays Ultra",before_full(false,false)==31);
     }

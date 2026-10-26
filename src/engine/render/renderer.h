@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/platform/hdr_color_settings.h"
 #include "engine/render/hdr_output.h"
 #include "engine/render/output_mode.h"
 #include "engine/render/pipeline_warmup.h"
@@ -36,6 +37,9 @@ struct RendererSettings {
     bool hdr = false;
     int hdr_paper_white = 200;
     int hdr_peak = 0;
+    int hdr_ui_brightness = 200;
+    HdrColorSettings hdr_color;
+    int hdr_sdr_eotf = 1;
     std::filesystem::path pipeline_cache_dir;
     uint32_t width = 1600;
     uint32_t height = 900;
@@ -73,7 +77,10 @@ public:
     void Resize(uint32_t width, uint32_t height);
     void SetVsync(bool enabled);
     void SetHdr(bool enabled);
+    HdrColorSettings hdr_color;
+    int hdr_ui_brightness = 200;
     void SetHdrLevels(int paper_white, int peak);
+    void SetHdrSdrEotf(int mode) { hdr_sdr_eotf_ = std::clamp(mode, 0, 2); }
 #ifdef _WIN32
     void UpdateFrameGenerationD3D12(gpu::d3d12::FrameGenOwner owner, bool paused);
     void SetFrameGenInputsD3D12(const gpu::d3d12::FrameGenInputs& inputs) {
@@ -83,7 +90,7 @@ public:
     bool FrameGeneratingD3D12() const;
     std::string FrameGenReasonD3D12(gpu::d3d12::FrameGenOwner owner);
 #endif
-    float HdrPaperWhite() const { return ctx_.hdr_paper_nits; }
+    float HdrPaperWhite() const { return std::min(ctx_.hdr_paper_nits, HdrPeak()); }
     float HdrPeak() const {
         return d3d12_ ? render::ResolveHdrPeak(static_cast<float>(ctx_.hdr_peak_setting), d3d12_display_peak_) : ctx_.HdrPeakNits();
     }
@@ -98,8 +105,6 @@ public:
     VkCommandBuffer Cmd() const { return active_cmd_; }
     gpu::CommandList& List() { return *list_; }
     const gpu::ImageResource& SceneColor() const { return scene_color_; }
-    const gpu::ImageResource& HdrBoost() const { return hdr_boost_; }
-    static constexpr gpu::Format kHdrBoostFormat = gpu::Format::R16Sfloat;
     gpu::Extent2D RenderExtent() const { return {scene_color_.extent.width, scene_color_.extent.height}; }
     uint32_t FrameIndex() const { return frame_index_; }
     struct CpuWaits {
@@ -112,11 +117,13 @@ public:
     };
     const CpuWaits& LastCpuWaits() const { return cpu_waits_; }
     static constexpr uint32_t kFramesInFlight = 2;
-    static constexpr gpu::Format kSceneColorFormat = gpu::Format::R8G8B8A8Unorm;
+    static constexpr gpu::Format kSceneColorFormat = gpu::Format::R16G16B16A16Sfloat;
     gpu::Format SceneColorFormat() const { return kSceneColorFormat; }
     gpu::Format FinalFormat() const { return final_format_; }
     RendererOutputMode OutputMode() const { return output_mode_; }
+    int HdrSdrEotf() const { return hdr_sdr_eotf_; }
     float OutputBrightness() const {
+        if (output_mode_ != RendererOutputMode::Sdr) return 1.0f;
         return plain_output ? 1.0f : std::clamp(brightness_override_ > 0.0f ? brightness_override_ : output_brightness, 0.1f, 4.0f);
     }
 
@@ -165,7 +172,7 @@ private:
                                 gpu::PipelineLayoutHandle layout = {});
     bool CreateLayerPipeline();
     gpu::BindingSetHandle LayerSet(gpu::ImageViewHandle hudless_view);
-    void CompositePush(float (&push)[20], float mode, gpu::Extent2D extent, bool with_top_ui, bool grain_off) const;
+    void CompositePush(float (&push)[32], float mode, gpu::Extent2D extent, bool with_top_ui, bool grain_off) const;
     void UpdateOutputMode();
     bool InitImGui(SDL_Window* window);
     void Composite(gpu::CommandList& cmd, gpu::BindingSetHandle set, float mode, gpu::Extent2D extent, gpu::Format target_format,
@@ -239,9 +246,9 @@ private:
     bool targets_missing_ = false;
     std::chrono::steady_clock::time_point targets_retry_at_{};
     float brightness_override_ = 0.0f;
+    int hdr_sdr_eotf_ = 1;
 
     gpu::ImageResource scene_color_;
-    gpu::ImageResource hdr_boost_;
     gpu::ImageResource final_;
     gpu::ImageResource ui_top_;
     bool ui_top_ready_ = false;

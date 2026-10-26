@@ -65,6 +65,7 @@ layout(std430, set = 1, binding = 0) readonly buffer FrameData {
     Probe probes[512];
     vec4 fog[8];
     vec4 mirror;
+    vec4 hdr_output; // x: native HDR scene, including reflection captures
 } frame;
 
 layout(std430, set = 1, binding = 1) readonly buffer SkinData {
@@ -232,17 +233,8 @@ float Luma601(vec3 c) {
     return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
-vec3 SrgbEncode(vec3 c) {
-    vec3 lo = c * 12.92;
-    vec3 hi = 1.055 * pow(max(c, vec3(1.0e-5)), vec3(1.0 / 2.4)) - 0.055;
-    return mix(hi, lo, lessThanEqual(c, vec3(0.0031308)));
-}
-
-vec3 SrgbDecode(vec3 c) {
-    vec3 lo = c / 12.92;
-    vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
-    return mix(hi, lo, lessThanEqual(c, vec3(0.04045)));
-}
+#include "srgb.glsl"
+#include "radiance.glsl"
 
 float Saturate(float x) {
     return clamp(x, 0.0, 1.0);

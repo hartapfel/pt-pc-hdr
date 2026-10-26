@@ -18,6 +18,8 @@
 
 namespace pt::vfx {
 
+std::atomic<float> g_flare_strength{1.0f};
+void SetFlareStrength(float strength) { g_flare_strength = strength; }
 std::atomic<float> g_flare_ghost_scale{0.0f};
 void SetFlareGhostScale(float scale) { g_flare_ghost_scale = scale; }
 
@@ -1164,7 +1166,9 @@ void System::BuildShape(const Instance& inst, const glm::mat4& world, const Shap
         const glm::vec4 uv = shape.attr[kUv] >= 0 ? Eval(c, shape.attr[kUv]) : glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
         glm::vec4 color = shape.attr[kColor] >= 0 ? Eval(c, shape.attr[kColor]) : glm::vec4(1.0f);
         if (mesh) {
-            color = WrapUnorm8(color);
+            // Legacy mesh tint packing wraps RGB modulo 256, losing HDR energy
+            // and even changing its hue. Retain the authored coverage convention.
+            color = view.hdr_output ? glm::vec4(glm::max(glm::vec3(color), glm::vec3(0.0f)), WrapUnorm8(color).a) : WrapUnorm8(color);
         } else {
             color.a = Saturate(color.a);
         }
@@ -1529,7 +1533,7 @@ void System::BuildFlare(const glm::mat4& world, const FlareDef& flare, const Fla
             sy *= el.angle_scale_y.Eval(light.cone);
         }
         alpha *= fade;
-        if (full_ghost) alpha *= ghost_scale;
+        if (full_ghost) alpha *= std::min(ghost_scale, 0.75f);
         if (el.angle_alpha.valid) {
             alpha *= el.angle_alpha.Eval(light.cone);
         }
@@ -1580,8 +1584,9 @@ void System::BuildFlare(const glm::mat4& world, const FlareDef& flare, const Fla
         }
         q.uv = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
         q.uv_next = q.uv;
-        q.color = glm::vec4(PackedColor(el.color), alpha * el.color.a);
+        q.color = glm::vec4(view.hdr_output ? glm::max(glm::vec3(el.color), glm::vec3(0.0f)) : PackedColor(el.color), alpha * el.color.a);
         q.params = params;
+        q.color *= glm::vec4(glm::vec3(g_flare_strength.load() * (full_ghost ? std::max(ghost_scale / 0.75f, 1.0f) : 1.0f)), 1.0f);
         q.luminance = root;
         q.info = glm::uvec4(textures ? textures(el.texture) : 0u, kQuadFlare, kNoTexture, 0u);
         out.quads.push_back(q);

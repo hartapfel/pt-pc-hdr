@@ -1,5 +1,6 @@
 #version 460
 #include "common.glsl"
+#include "post_filter.glsl"
 
 layout(push_constant) uniform PassPush {
     uvec4 ids;
@@ -34,7 +35,7 @@ void main() {
         out_color = center;
         return;
     }
-    vec3 c = center.rgb;
+    vec3 c = PostLinearSample(source, uv).rgb;
     float k = 1.0;
     for (int level = 0; level < 8; ++level) {
         vec2 o = texel * k;
@@ -50,9 +51,9 @@ void main() {
         }
         vec3 sum = c;
         for (int i = 0; i < 4; ++i) {
-            sum += Img(source, SMP_LINEAR_CLAMP, taps[i]).rgb;
+            sum += PostLinearSample(source, taps[i]).rgb;
         }
         c = sum * 0.2;
     }
-    out_color = vec4(Saturate(c), 1.0);
+    out_color = vec4(pass.f1.z > 0.0 ? SrgbEncode(max(c, vec3(0.0))) : Saturate(c), 1.0);
 }

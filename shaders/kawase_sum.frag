@@ -22,8 +22,9 @@ void main() {
     c += Img(source, SMP_LINEAR_CLAMP, in_uv + vec2(-o.x, o.y));
     c += Img(source, SMP_LINEAR_CLAMP, in_uv + vec2(o.x, o.y));
     c *= 0.25 * pass.f0.y;
-    out_blur = clamp(c, 0.0, 1.0);
-    vec4 stored = vec4(SrgbDecode(round(SrgbEncode(out_blur.rgb) * 255.0) / 255.0), round(out_blur.a * 255.0) / 255.0);
+    out_blur = frame.hdr_output.x > 0.5 ? vec4(SceneRadiance(c.rgb, 1.0, true), c.a) : clamp(c, 0.0, 1.0);
+    vec4 stored = frame.hdr_output.x > 0.5 ? out_blur
+        : vec4(SrgbDecode(round(SrgbEncode(out_blur.rgb) * 255.0) / 255.0), round(out_blur.a * 255.0) / 255.0);
     vec4 sum = stored;
     sum += stored;
     sum += stored;

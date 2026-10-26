@@ -1,5 +1,6 @@
 #version 460
 #include "common.glsl"
+#include "post_filter.glsl"
 
 layout(push_constant) uniform PassPush {
     uvec4 ids;
@@ -13,7 +14,7 @@ layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
 
 vec4 Tap(vec2 uv) {
-    return Img(pass.ids.x, SMP_LINEAR_CLAMP, uv);
+    return PostLinearSample(pass.ids.x, uv);
 }
 
 void main() {
@@ -30,5 +31,5 @@ void main() {
     sum += Tap(c + vec2(0.0, -o.y)) * 0.125;
     sum += Tap(c + vec2(0.8660254 * o.x, -0.5 * o.y)) * 0.125;
     sum += Tap(c + vec2(0.8660254 * o.x, 0.5 * o.y)) * 0.125;
-    out_color = sum;
+    out_color = vec4(PostEncode(sum.rgb), sum.a);
 }

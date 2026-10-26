@@ -416,7 +416,7 @@ bool PtLayers(vec3 origin, vec3 dir, float t_end, float emissive_cap, inout vec3
         if (m.kind == KIND_CONSTANT || m.kind == KIND_SKY) {
             vec4 tex = textureLod(PT_TEX2D(m.albedo), hs.uv, 2.0);
             float a = Saturate(m.albedo_factor.a * tex.a);
-            radiance += throughput * min(vec3(emissive_cap), m.albedo_factor.rgb * tex.rgb * m.params.y) * a;
+            radiance += throughput * SceneRadiance(m.albedo_factor.rgb * tex.rgb * m.params.y, emissive_cap, frame.hdr_output.x > 0.5) * a;
             throughput *= 1.0 - a;
         } else if (m.kind == KIND_GLASS) {
             vec3 I = dir;

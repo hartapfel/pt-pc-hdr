@@ -59,6 +59,7 @@ void SceneRenderer::RecordReflectionSample(gpu::CommandList& cmd, const SceneLig
 void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& lighting, float dt) {
     const ScreenSettings& screen = lighting.screen;
     const ExposureSettings& exposure = lighting.exposure;
+    const bool hdr_output = hdr_scene_active_;
     gpu::PassPush push;
     push.ids.w = post_view_;
     push.f1.x = 0.0f;
@@ -144,7 +145,7 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     cmd.BeginPass(output_extent_, {{&ldr_[0], false, {}}});
     push.ids.x = 0;
     const float lut_blend = std::clamp(screen.lut_blend, 0.0f, 1.0f);
-    push.f0 = glm::vec4(bloom ? 1.0f : 0.0f, lut_blend, lighting.valid ? 1.0f : renderer_->exposure, 0.0f);
+    push.f0 = glm::vec4(bloom ? graphics.bloom_strength : 0.0f, lut_blend, lighting.valid ? 1.0f : renderer_->exposure, 0.0f);
     static const bool tonemap_test = std::getenv("PT_TONEMAP_TEST") != nullptr;
     if (tonemap_test) {
         push.f0.x = 0.0f;
@@ -152,24 +153,10 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         push.f0.w = 0.0f;
     }
     gpu::PassPush tone = push;
-    tone.f1 = glm::vec4(graphics.deband ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+    tone.f1 = glm::vec4(graphics.deband && !hdr_output ? 1.0f : 0.0f, hdr_output ? 1.0f : 0.0f, 1.0f, 0.0f);
     Fullscreen(cmd, tonemap_, tone);
     cmd.EndPass();
     cmd.UseTargets({{&ldr_[0], gpu::Layout::ShaderReadOnly}});
-
-    if (renderer_->OutputMode() != RendererOutputMode::Sdr && vr_eye_ < 0 && renderer_->HdrBoost().image && hdr_boost_pipeline_) {
-        RenderTarget boost;
-        boost.image = renderer_->HdrBoost();
-        boost.layout = gpu::Layout::ColorAttachment;
-        cmd.BeginPass(output_extent_, {{&boost, false, {}}});
-        gpu::PassPush gain;
-        const bool lens = toggles.distortion && screen.screen_distortion && lighting.valid;
-        const float bloom_weight = bloom && !tonemap_test ? 1.0f : 0.0f;
-        const float ratio = renderer_->HdrPeak() / std::max(renderer_->HdrPaperWhite(), 1.0f);
-        gain.f0 = glm::vec4(lens ? 1.0f : 0.0f, lighting.valid ? 1.0f : renderer_->exposure, bloom_weight, ratio);
-        Fullscreen(cmd, hdr_boost_pipeline_, gain);
-        cmd.EndPass();
-    }
 
     auto ldr_index = [](int i) { return i == 0 ? gpu::kImgLdrA : gpu::kImgLdrB; };
     auto run = [&](gpu::PipelineHandle pipeline, const gpu::PassPush& p) {
@@ -189,8 +176,8 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     if (toggles.depth_of_field && screen.depth_of_field && lighting.valid) {
         RecordDepthOfField(cmd, screen, current);
     }
-    const bool street_blur = toggles.motion_blur && screen.motion_blur && lighting.valid && screen.smooth_camera_motion_blur;
-    if (toggles.motion_blur && screen.motion_blur && lighting.valid && !street_blur) {
+    // HDR optical integration precedes grading; preserve the SDR street order.
+    if (toggles.motion_blur && screen.motion_blur && lighting.valid && (hdr_output || !screen.smooth_camera_motion_blur)) {
         RecordMotionBlur(cmd, screen, current);
     }
     if (subliminal_string_state_.value > 0.0f && subliminal_string_) {
@@ -198,17 +185,18 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         s.ids = glm::uvec4(subliminal_string_state_.texture, ldr_index(current), 0, 0);
         const float across = output_extent_.height ? (static_cast<float>(output_extent_.width) / static_cast<float>(output_extent_.height)) / (16.0f / 9.0f) : 1.0f;
         s.f0 = glm::vec4(subliminal_string_state_.position, subliminal_string_state_.value, across);
-        s.f1 = glm::vec4(bloom && !tonemap_test ? 1.0f : 0.0f, lighting.valid ? 1.0f : renderer_->exposure, 0.0f, 0.0f);
+        s.f1 = glm::vec4(bloom && !tonemap_test ? graphics.bloom_strength : 0.0f, lighting.valid ? 1.0f : renderer_->exposure, hdr_output ? 1.0f : 0.0f, 0.0f);
         run(subliminal_string_, s);
     }
     if (toggles.color_lut) {
         gpu::PassPush lut;
         lut.ids = glm::uvec4(ldr_index(current), 1, 0, post_view_);
         lut.f0 = glm::vec4(0.0f, lut_blend, 1.0f, 1.0f);
-        lut.f1 = glm::vec4(graphics.deband ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+        lut.f1 = tone.f1;
         run(tonemap_, lut);
     }
-    if (street_blur) {
+
+    if (!hdr_output && toggles.motion_blur && screen.motion_blur && lighting.valid && screen.smooth_camera_motion_blur) {
         RecordMotionBlur(cmd, screen, current);
     }
 
@@ -219,7 +207,7 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
         b.f0 = glm::vec4(backdrop_state_.opacity, backdrop_state_.darken, backdrop_state_.tear, backdrop_state_.time);
         b.f1 = glm::vec4(backdrop_state_.tint, backdrop_state_.aspect);
         b.f2 = glm::vec4(output_extent_.height ? static_cast<float>(output_extent_.width) / static_cast<float>(output_extent_.height) : 16.0f / 9.0f,
-                         0.0f, 0.0f, 0.0f);
+                         hdr_output ? 1.0f : 0.0f, 0.0f, 0.0f);
         b.m = glm::mat4(0.0f);
         b.m[0] = glm::vec4(backdrop_state_.zoom, backdrop_state_.center, backdrop_state_.focus);
         run(backdrop_, b);
@@ -278,6 +266,7 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     if (screen.colour_banding_canceller && lighting.valid) {
         cmd.UseTargets({{&depth_, gpu::Layout::DepthReadOnly}});
         push.ids = glm::uvec4(ldr_index(current), 0, 0, main_view_.index);
+        push.f1.z = hdr_output ? 1.0f : 0.0f;
         run(banding_, push);
     }
 
@@ -290,16 +279,18 @@ void SceneRenderer::RecordPost(gpu::CommandList& cmd, const SceneLighting& light
     const bool grain = toggles.film_grain && screen.film_grain && lighting.valid;
     const bool distortion = toggles.distortion && screen.screen_distortion && lighting.valid;
     push.f0 = glm::vec4(distortion ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
-    push.f1 = glm::vec4(graphics.clarity, graphics.deband ? 1.0f : 0.0f, 0.0f, 0.0f);
+    push.f1 = glm::vec4(!hdr_output ? graphics.clarity : 0.0f, graphics.deband && !hdr_output ? 1.0f : 0.0f, hdr_output ? 1.0f : 0.0f, 0.0f);
     Fullscreen(cmd, screen_fx_, push);
     renderer_->grain[0] = grain ? 1.0f : 0.0f;
-    renderer_->grain[1] = screen.grain_alt ? 1.0f : 0.0f;
+    renderer_->grain[1] = (screen.grain_alt ? 1.0f : 0.0f) + (graphics.film_grain_type == 1 ? 2.0f : 0.0f);
     renderer_->grain[2] = screen.grain_strength * graphics.film_grain;
+    renderer_->grain[3] = hdr_output ? graphics.clarity : 0.0f;
     renderer_->grain_offset[0] = screen.grain_offset.x;
     renderer_->grain_offset[1] = screen.grain_offset.y;
     if (vfx_filter && vr_eye_ < 0) {
         SceneFilterContext context = FilterContext(cmd, 2u);
         context.color_format = renderer_->SceneColorFormat();
+        context.source = ldr_[current].image.view;
         vfx_filter(context);
         BindSets(cmd, gpu::BindPoint::Graphics);
     }
@@ -495,23 +486,28 @@ bool SceneRenderer::RecordMotionBlur(gpu::CommandList& cmd, const ScreenSettings
     push.f0 = glm::vec4(0.5f, 0.5f, 1.0f, scale);
     PostPass(cmd, bake, mb_bake_pipeline_, push);
     const uint32_t picture = current == 0 ? gpu::kImgLdrA : gpu::kImgLdrB;
+    const bool linear = smooth || hdr_scene_active_;
     const float shown = smooth ? 2.2f / renderer_->OutputBrightness() : 0.0f;
-    if (smooth) {
+    if (linear) {
         gpu::PassPush decode;
         decode.ids = glm::uvec4(picture, 0, 0, post_view_);
         decode.f0 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-        decode.f1 = glm::vec4(0.0f, shown, 0.0f, 0.0f);
+        decode.f1 = glm::vec4(0.0f, shown, hdr_scene_active_ ? 1.0f : 0.0f, 0.0f);
         PostPass(cmd, blur[1], mb_decode_, decode);
     }
-    push.ids = glm::uvec4(smooth ? blur_image + 1 : picture, bake_image, smooth ? 1u : 0u, post_view_);
+    push.ids = glm::uvec4(linear ? blur_image + 1 : picture, bake_image, smooth ? 1u : 0u, post_view_);
     PostPass(cmd, blur[0], mb_mcguire_, push);
     push.ids = glm::uvec4(blur_image, bake_image, smooth ? 1u : 0u, post_view_);
     push.f0 = glm::vec4(0.5f, 0.5f, 0.16666667f, scale);
     PostPass(cmd, blur[1], mb_mcguire_, push);
-    push.ids = glm::uvec4(blur_image + 1, 0, 0, post_view_);
+    push.ids = glm::uvec4(blur_image + 1, picture, 0, post_view_);
     push.f0 = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-    push.f1 = glm::vec4(shown, 0.0f, 0.0f, 0.0f);
-    PostPass(cmd, ldr_[current], mb_composite_, push);
+    push.f1 = glm::vec4(shown, 0.0f, hdr_scene_active_ ? 2.0f : 0.0f, 0.0f);
+    // HDR composites coverage in the shader, so its sharp input must not alias
+    // the render target. SDR retains the original fixed-function alpha blend.
+    const int destination = hdr_scene_active_ ? 1 - current : current;
+    PostPass(cmd, ldr_[destination], mb_composite_, push);
+    current = destination;
     return true;
 }
 

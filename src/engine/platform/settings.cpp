@@ -103,6 +103,21 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
     Read(v, "display.hdr", out.display.hdr);
     Read(v, "display.hdr_paper_white", out.display.hdr_paper_white);
     Read(v, "display.hdr_peak", out.display.hdr_peak);
+    Read(v, "display.hdr_sdr_eotf", out.display.hdr_sdr_eotf);
+    out.display.hdr_sdr_eotf = std::clamp(out.display.hdr_sdr_eotf, 0, 2);
+    out.display.hdr_ui_brightness = std::clamp(out.display.hdr_paper_white, 80, 500);
+    Read(v, "display.hdr_ui_brightness", out.display.hdr_ui_brightness);
+    out.display.hdr_ui_brightness = std::clamp(out.display.hdr_ui_brightness, 80, 500);
+    Read(v, "display.hdr_menu_preview", out.display.hdr_menu_preview);
+    Read(v, "display.hdr_exposure", out.display.hdr_color.exposure);
+    Read(v, "display.hdr_contrast", out.display.hdr_color.contrast);
+    Read(v, "display.hdr_highlights", out.display.hdr_color.highlights);
+    Read(v, "display.hdr_shadows", out.display.hdr_color.shadows);
+    Read(v, "display.hdr_saturation", out.display.hdr_color.saturation);
+    Read(v, "display.hdr_highlight_saturation", out.display.hdr_color.highlight_saturation);
+    Read(v, "display.hdr_wide_gamut", out.display.hdr_color.wide_gamut);
+    Read(v, "display.hdr_blowout", out.display.hdr_color.blowout);
+    out.display.hdr_color.Normalize();
     Read(v, "display.letterbox", out.display.letterbox);
     Read(v, "display.rendering_api", out.display.rendering_api);
     Read(v, "display.rendering_api_asked", out.display.rendering_api_asked);
@@ -169,21 +184,33 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
     Read(v, "graphics.lens_ghosts", out.graphics.lens_ghosts);
     Read(v, "graphics.deband", out.graphics.deband);
     Read(v, "graphics.film_grain", out.graphics.film_grain);
+    Read(v, "graphics.film_grain_type", out.graphics.film_grain_type);
+    // Obsolete shadow_toe entries are ignored: preserve the vanilla response.
+    Read(v, "graphics.bloom_strength", out.graphics.bloom_strength);
+    Read(v, "graphics.flare_strength", out.graphics.flare_strength);
+    Read(v, "graphics.ghost_strength", out.graphics.ghost_strength);
+
     Read(v, "graphics.clarity", out.graphics.clarity);
     Read(v, "graphics.texture_detail", out.graphics.texture_detail);
     Read(v, "graphics.ray_quality", out.graphics.ray_quality);
     if (!v.contains("graphics.lens_ghosts")) {
         AppSettings probe = out;
         probe.graphics.lens_ghosts = true;
+        probe.graphics.film_grain_type = 0; // Grain choice is independent of legacy lens-ghost inference.
         out.graphics.lens_ghosts = DetectGraphicsPreset(probe, false) == GraphicsPreset::Original ||
                                    DetectGraphicsPreset(probe, true) == GraphicsPreset::Original;
     }
     if (!v.contains("graphics.deband")) {
         AppSettings probe = out;
         probe.graphics.deband = false;
+        probe.graphics.film_grain_type = 0; // Grain choice must not change legacy dither inference.
         out.graphics.deband = !(DetectGraphicsPreset(probe, false) == GraphicsPreset::Original ||
                                 DetectGraphicsPreset(probe, true) == GraphicsPreset::Original);
     }
+    // Migrate the two legacy switches once. New intensity keys own the state.
+    if (!out.graphics.bloom) out.graphics.bloom_strength = 0.0f;
+    if (!v.contains("graphics.ghost_strength")) out.graphics.ghost_strength = out.graphics.lens_ghosts ? 1.0f : 0.0f;
+    out.graphics.lens_ghosts = out.graphics.ghost_strength > 0.0f;
     Read(v, "vr.enabled", out.vr.enabled);
     Read(v, "vr.flashlight", out.vr.flashlight);
     Read(v, "vr.flashlight_hand", out.vr.flashlight_hand);
@@ -255,6 +282,12 @@ bool LoadAppSettings(const std::filesystem::path& path, AppSettings& out) {
             LogInfo("settings: ray quality Ultra from an older version is now Ultra with every light's traced shadows, bounce light and glossy reflections");
         }
     }
+    out.graphics.film_grain_type = std::clamp(out.graphics.film_grain_type, 0, 1);
+    out.graphics.bloom_strength = std::isfinite(out.graphics.bloom_strength) ? std::clamp(out.graphics.bloom_strength, 0.0f, 2.0f) : 1.0f;
+    out.graphics.ghost_strength = std::isfinite(out.graphics.ghost_strength) ? std::clamp(out.graphics.ghost_strength, 0.0f, 2.0f) : 1.0f;
+    out.graphics.lens_ghosts = out.graphics.ghost_strength > 0.0f;
+    out.graphics.flare_strength = std::isfinite(out.graphics.flare_strength) ? std::clamp(out.graphics.flare_strength, 0.0f, 2.0f) : 1.0f;
+
     out.graphics.film_grain=std::isfinite(out.graphics.film_grain)?std::clamp(out.graphics.film_grain,0.0f,1.0f):1.0f;
     out.graphics.clarity=std::isfinite(out.graphics.clarity)?std::clamp(out.graphics.clarity,0.0f,1.0f):0.0f;
     out.display.width = std::clamp(out.display.width, 320, 16384);
@@ -305,10 +338,23 @@ bool SaveAppSettings(const std::filesystem::path& path, const AppSettings& s) {
          << "; frames per second at most, 0 for no limit (menus and the paused game stay at 60 or less either way)\n"
          << "fps_limit = " << s.display.fps_limit << "\n"
          << "hdr = " << (s.display.hdr ? 1 : 0) << "\n"
-         << "; HDR output levels in nits: paper white (80 to 500) is the picture's white and the menus, the peak (400 to 4000) is how bright\n"
+         << "; HDR output levels in nits: game brightness / legacy paper white (80 to 500) is scene reference white, the peak (400 to 4000) is how bright\n"
          << "; the lamps, the flashlight and the glow around them go; a peak of 0 takes the display's own, 1000 where Windows does not tell it\n"
          << "hdr_paper_white = " << s.display.hdr_paper_white << "\n"
          << "hdr_peak = " << s.display.hdr_peak << "\n"
+         << "; SDR display response to preserve in HDR: 0 sRGB, 1 gamma 2.2 (default), 2 gamma 2.4\n"
+         << "hdr_sdr_eotf = " << s.display.hdr_sdr_eotf << "\n"
+         << "; Independent interface white in nits (80 to 500), unaffected by scene grading\n"
+         << "hdr_ui_brightness = " << s.display.hdr_ui_brightness << "\n"
+         << "hdr_menu_preview = " << s.display.hdr_menu_preview << "\n"
+         << "hdr_exposure = " << s.display.hdr_color.exposure << "\n"
+         << "hdr_contrast = " << s.display.hdr_color.contrast << "\n"
+         << "hdr_highlights = " << s.display.hdr_color.highlights << "\n"
+         << "hdr_shadows = " << s.display.hdr_color.shadows << "\n"
+         << "hdr_saturation = " << s.display.hdr_color.saturation << "\n"
+         << "hdr_highlight_saturation = " << s.display.hdr_color.highlight_saturation << "\n"
+         << "hdr_blowout = " << s.display.hdr_color.blowout << "\n"
+         << "hdr_wide_gamut = " << s.display.hdr_color.wide_gamut << "\n"
          << "; black bars over and under the picture in play and in the cutscenes, not in the original: 0 off, 1 2.39:1, 2 1.85:1\n"
          << "letterbox = " << s.display.letterbox << "\n"
          << "; the graphics API the game draws with at the next start: vulkan, or d3d12 (DirectX 12, Windows)\n"
@@ -437,6 +483,11 @@ bool SaveAppSettings(const std::filesystem::path& path, const AppSettings& s) {
          << "; the sub-LSB dither at the tonemap, the colour grading and the final image, against banding in a lamp's glow; 0 is the original's (PS4) output\n"
          << "deband = " << s.graphics.deband << "\n"
          << "film_grain = " << s.graphics.film_grain << "\n"
+         << "; 0 Original film grain, 1 Improved Perceptual Film Grain\n"
+         << "film_grain_type = " << s.graphics.film_grain_type << "\n"
+         << "bloom_strength = " << s.graphics.bloom_strength << "\n"
+         << "flare_strength = " << s.graphics.flare_strength << "\n"
+         << "ghost_strength = " << s.graphics.ghost_strength << "\n"
          << "clarity = " << s.graphics.clarity << "\n"
          << "texture_detail = " << s.graphics.texture_detail << "\n"
          << "; ray quality: 0 balanced (2 rays for the soft shadows and the traced ambient occlusion), 1 high (4), 3 ultra (8 rays,\n"

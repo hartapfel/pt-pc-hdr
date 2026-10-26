@@ -82,6 +82,7 @@ public:
     bool TakeStreetReturn() { return std::exchange(street_return_, false); }
     int TextLanguage() const { return text_language_; }
     int Selector() const { return selector_; }
+    void SetHdrActive(bool active) { if (hdr_active_ != active) { hdr_active_ = active; ApplyTexts(); } }
     void SetPromptStyle(const PromptStyle& style) { prompt_style_ = style; }
     PromptDevice Prompts() const { return shown_prompts_; }
     const ui::UifModel* Model() const { return model_; }
@@ -89,6 +90,7 @@ public:
     std::string DialogKind(int* focus) const;
 
 private:
+    bool hdr_active_ = false;
     struct Animation {
         const ui::UiaAnimation* main = nullptr;
         const ui::UiaAnimation* shader = nullptr;
@@ -96,6 +98,7 @@ private:
     };
 
     void ApplyStatic();
+    bool ScenePreviewActive() const;
     void ApplyPages();
     void SwitchPage(Game& game, Page page);
     void UpdateOriginal(Game& game, const MenuInput& input, float dt);

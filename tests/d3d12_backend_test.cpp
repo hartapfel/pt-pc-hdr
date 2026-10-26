@@ -1,4 +1,6 @@
+#include "engine/render/exposure_math.h"
 #include <SDL3/SDL.h>
+#include <glm/gtc/packing.hpp>
 #include <stb_image_write.h>
 
 #include <algorithm>
@@ -244,12 +246,13 @@ Case CompositeCase(bool mode1) {
     c.textures = {SceneTexture(), GrainTexture(), UiTopTexture()};
     c.samplers = {LinearClamp(), LinearRepeat()};
     c.bindings = {{0, 0, Bind::Combined, {0}, 0}, {0, 1, Bind::Combined, {1}, 1}, {0, 2, Bind::Combined, {2}, 0}};
-    c.push_bytes = 80;
+    c.push_bytes = 128;
     if (mode1) {
         c.draws = {{0, 3, Floats({1.0f, 1.15f, 1.0f, 0.0f, 0, 0, 0, 0, 1.0f, 0.0f, 0.7f, 0.0f, 0.137f, 0.291f, 1.2f, 0.0f, 0, 0, 0, 1.0f})}};
     } else {
         c.draws = {{0, 3, Floats({1.0f, 1.0f, 0.0f, 2.0f, 0.05f, 0.05f, 0.2f, 0.5f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})}};
     }
+    for (auto& draw : c.draws) draw.push.resize(128, 0);
     return c;
 }
 
@@ -315,6 +318,9 @@ Case UiCase(gpu::Format color = gpu::Format::R8G8B8A8Unorm, uint32_t width = 320
         Put(draw.push, 1.0f / height);
         Put(draw.push, static_cast<uint32_t>(draws.size()));
         Put(draw.push, 0u);
+        draw.push.resize(64, 0);
+        Put(draw.push, 1.0f); // UI brightness ratio, inactive in this SDR fixture.
+        draw.push.resize(80, 0);
         draws.push_back(d);
         c.draws.push_back(std::move(draw));
     };
@@ -369,7 +375,7 @@ Case UiCase(gpu::Format color = gpu::Format::R8G8B8A8Unorm, uint32_t width = 320
                   {0, 3, Bind::TexSampler, {}, 0},
                   {1, 0, Bind::StorageBuffer, {}, 0, bytes},
                   {1, 1, Bind::Combined, {3}, 1}};
-    c.push_bytes = 16;
+    c.push_bytes = 80;
     return c;
 }
 
@@ -1157,6 +1163,9 @@ bool TextureManagerRun(gpu::Device& dev, Picture& out) {
         Put(call.push, 1.0f / kH);
         Put(call.push, static_cast<uint32_t>(draws.size()));
         Put(call.push, 0u);
+        call.push.resize(64, 0);
+        Put(call.push, 1.0f); // UI brightness ratio, inactive in this SDR fixture.
+        call.push.resize(80, 0);
         draws.push_back(d);
         calls.push_back(std::move(call));
     };
@@ -1197,7 +1206,7 @@ bool TextureManagerRun(gpu::Device& dev, Picture& out) {
     }
     gpu::PipelineLayoutDesc ld;
     ld.sets = {textures.BindingLayout(), set1_layout};
-    ld.push_bytes = 16;
+    ld.push_bytes = 80;
     ld.push_stages = gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment;
     const gpu::PipelineLayoutHandle layout = dev.CreatePipelineLayout(ld);
     gpu::GraphicsPipelineDesc pd;
@@ -1257,16 +1266,28 @@ bool TextureManagerRun(gpu::Device& dev, Picture& out) {
 }
 
 struct ComputeResult {
+    float metered = -1;
     float values[4] = {};
     bool timestamps = false;
     uint64_t ticks = 0;
 };
 
-bool ComputeRun(gpu::Device& dev, ComputeResult& out) {
+bool ComputeRun(gpu::Device& dev, ComputeResult& out, bool meter = false, float level = 1.0f) {
     const bool d3d12 = dev.Info().backend == gpu::Backend::D3D12;
     GpuRunner runner(dev);
     gpu::ImageResource scene;
-    bool ok = runner.Upload(SceneTexture(), scene);
+    gpu::ImageResource depth;
+    Texture input = SceneTexture();
+    if (meter) {
+        input.width=128;input.height=128;input.format=gpu::Format::R32G32B32A32Sfloat;
+        std::vector<glm::vec4> data(128*128,glm::vec4(level,level,level,1));
+        input.levels={std::vector<uint8_t>(data.size()*sizeof(glm::vec4))};
+        std::memcpy(input.levels[0].data(),data.data(),input.levels[0].size());
+    }
+    bool ok = runner.Upload(input, scene);
+    if (meter) ok = ok && runner.Upload(MakeRgba(128,128,1,[](uint32_t x,uint32_t) {
+        return std::array<uint8_t,4>{static_cast<uint8_t>(x<64?255:0),0,0,255};
+    }),depth);
     const gpu::SamplerHandle linear = dev.CreateSampler(LinearClamp());
     gpu::BindingLayoutDesc frame_desc;
     frame_desc.bindings = {{2, gpu::BindingType::SampledImage, 62, gpu::ShaderStage::All, gpu::BindingFlag::PartiallyBound},
@@ -1284,20 +1305,21 @@ bool ComputeRun(gpu::Device& dev, ComputeResult& out) {
     ok = ok && dev.AllocateBindingSets(pool, layouts, sets);
     gpu::BufferResource result;
     gpu::BufferDesc bd;
-    bd.size = 64;
+    bd.size = 8192;
     bd.usage = gpu::BufferUsage::StorageBuffer;
     bd.host_visible = true;
     bd.name = "test luminance";
     ok = ok && dev.CreateBuffer(bd, result);
     if (ok) {
-        std::memset(result.mapped, 0, 64);
+        std::memset(result.mapped, 0, 8192);
         constexpr uint32_t kSceneSlot = 7;
         const gpu::ImageBinding image{scene.view, gpu::Layout::ShaderReadOnly, {}, &scene};
         const gpu::BufferBinding buffer{result.buffer, 0, ~0ull};
-        gpu::BindingWrite writes[3];
+        gpu::BindingWrite writes[4];
+        const gpu::ImageBinding depth_binding{depth.view, gpu::Layout::ShaderReadOnly, {}, &depth};
         writes[0].set = sets[1];
         writes[0].binding = 2;
-        writes[0].first = kSceneSlot;
+        writes[0].first = meter ? 4u : kSceneSlot;
         writes[0].type = gpu::BindingType::SampledImage;
         writes[0].images = std::span(&image, 1);
         writes[1].set = sets[1];
@@ -1309,7 +1331,11 @@ bool ComputeRun(gpu::Device& dev, ComputeResult& out) {
         writes[2].binding = 5;
         writes[2].type = gpu::BindingType::StorageBuffer;
         writes[2].buffers = std::span(&buffer, 1);
-        dev.WriteBindings(writes);
+        if (meter) {
+            writes[3].set=sets[1];writes[3].binding=2;writes[3].first=3;
+            writes[3].type=gpu::BindingType::SampledImage;writes[3].images=std::span(&depth_binding,1);
+        }
+        dev.WriteBindings(std::span(writes,meter?4:3));
     }
     gpu::PipelineLayoutDesc ld;
     ld.sets = {empty_layout, frame_layout};
@@ -1317,7 +1343,7 @@ bool ComputeRun(gpu::Device& dev, ComputeResult& out) {
     const gpu::PipelineLayoutHandle layout = dev.CreatePipelineLayout(ld);
     gpu::ComputePipelineDesc cd;
     cd.layout = layout;
-    cd.shader = "reflect_colour.comp";
+    cd.shader = meter ? "luminance.comp" : "reflect_colour.comp";
     const gpu::PipelineHandle pipeline = dev.CreateComputePipeline(cd);
     const gpu::QueryPoolHandle queries = dev.CreateTimestampPool(2);
     ok = ok && pipeline && queries;
@@ -1332,12 +1358,14 @@ bool ComputeRun(gpu::Device& dev, ComputeResult& out) {
             push.f0 = glm::vec4(0.55f, 0.15f, 0.85f, 0.2f);
             push.f1 = glm::vec4(0.5f, 0.45f, 0.9f, 0.5f);
             list.PushConstants(layout, gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment | gpu::ShaderStage::Compute, 0, sizeof(push), &push);
-            list.Dispatch(1, 1, 1);
+            list.Dispatch(meter?2:1, meter?2:1, 1);
             list.BufferBarrier(result.buffer, gpu::PipelineStage::ComputeShader, static_cast<uint64_t>(gpu::Access::ShaderWrite), gpu::PipelineStage::Host,
                                static_cast<uint64_t>(gpu::Access::HostRead));
             list.WriteTimestamp(queries, 1);
         });
+        dev.InvalidateMapped(result,0,~0ull);
         std::memcpy(out.values, result.mapped, sizeof(out.values));
+        if (meter) out.metered=exposure_math::Meter({static_cast<const glm::vec2*>(result.mapped),1024});
         uint64_t ticks[2] = {};
         out.timestamps = dev.ReadTimestamps(queries, 0, 2, ticks) && ticks[1] >= ticks[0];
         out.ticks = ticks[1] - ticks[0];
@@ -1352,6 +1380,7 @@ bool ComputeRun(gpu::Device& dev, ComputeResult& out) {
     dev.DestroyBindingLayout(empty_layout);
     dev.DestroySampler(linear);
     dev.DestroyImage(scene);
+    if (meter) dev.DestroyImage(depth);
     return ok;
 }
 
@@ -1360,6 +1389,437 @@ struct DepthPicture {
     uint32_t height = 0;
     std::vector<float> depth;
 };
+
+// Exercise the actual lighting composite, before the post/LUT/output tests.
+// The former TPP shoulder hid HDR lighting here even with float render targets.
+bool HdrComposeRun(gpu::Device& dev) {
+    constexpr uint32_t width = 256;
+    GpuRunner runner(dev);
+    gpu::ImageResource inputs[4];
+    const uint32_t slots[] = {gpu::kImgAlbedo, gpu::kImgDepth, gpu::kImgDiffuse, gpu::kImgSpecular};
+    std::array<glm::vec4, width> source[4];
+    for (uint32_t x = 0; x < width; ++x) {
+        const float radiance = x < 128 ? x / 127.0f : std::exp2((x - 128) / 127.0f * 6.0f);
+        source[0][x] = glm::vec4(1.0f);
+        source[1][x] = glm::vec4(1.0f);
+        source[2][x] = glm::vec4(glm::vec3(radiance * .75f, radiance * .375f, radiance * .1875f), 1.0f);
+        source[3][x] = glm::vec4(glm::vec3(radiance * .25f, radiance * .125f, radiance * .0625f), 1.0f);
+    }
+    bool ok = true;
+    for (uint32_t i = 0; i < 4; ++i) {
+        Texture t;
+        t.width = width; t.height = 1; t.format = gpu::Format::R32G32B32A32Sfloat;
+        t.levels.emplace_back(sizeof(source[i]));
+        std::memcpy(t.levels[0].data(), source[i].data(), sizeof(source[i]));
+        ok = runner.Upload(t, inputs[i]) && ok;
+    }
+    gpu::BindingLayoutDesc empty_desc;
+    const auto empty_layout = dev.CreateBindingLayout(empty_desc);
+    gpu::BindingLayoutDesc frame_desc;
+    frame_desc.bindings = {{0, gpu::BindingType::StorageBuffer, 1, gpu::ShaderStage::All},
+        {2, gpu::BindingType::SampledImage, 62, gpu::ShaderStage::All, gpu::BindingFlag::PartiallyBound},
+        {3, gpu::BindingType::Sampler, 5, gpu::ShaderStage::All, gpu::BindingFlag::PartiallyBound}};
+    const auto frame_layout = dev.CreateBindingLayout(frame_desc);
+    gpu::BindingPoolDesc pool_desc;
+    pool_desc.max_sets = 2;
+    pool_desc.sizes = {{gpu::BindingType::StorageBuffer, 1}, {gpu::BindingType::SampledImage, 62}, {gpu::BindingType::Sampler, 5}};
+    const auto pool = dev.CreateBindingPool(pool_desc);
+    const gpu::BindingLayoutHandle layouts[] = {empty_layout, frame_layout};
+    gpu::BindingSetHandle sets[2];
+    ok = dev.AllocateBindingSets(pool, layouts, sets) && ok;
+    gpu::SamplerDesc sampler_desc;
+    sampler_desc.mag = sampler_desc.min = gpu::Filter::Nearest;
+    const auto sampler = dev.CreateSampler(sampler_desc);
+    sampler_desc.mag = sampler_desc.min = gpu::Filter::Linear;
+    const auto linear_sampler = dev.CreateSampler(sampler_desc);
+    gpu::BufferResource frame;
+    ok = dev.CreateBuffer({sizeof(gpu::FrameData), gpu::BufferUsage::StorageBuffer, true}, frame) && ok;
+    if (ok) {
+        std::memset(frame.mapped, 0, sizeof(gpu::FrameData));
+        const gpu::BufferBinding buffer{frame.buffer, 0, ~0ull};
+        gpu::BindingWrite write;
+        write.set = sets[1]; write.binding = 0; write.type = gpu::BindingType::StorageBuffer;
+        write.buffers = std::span(&buffer, 1);
+        dev.WriteBindings({&write, 1});
+        write = {};
+        write.set = sets[1]; write.binding = 3; write.first = gpu::kSmpPointClamp;
+        write.type = gpu::BindingType::Sampler; write.samplers = std::span(&sampler, 1);
+        dev.WriteBindings({&write, 1});
+        write.first = gpu::kSmpLinearClamp; write.samplers = std::span(&linear_sampler, 1);
+        dev.WriteBindings({&write, 1});
+        for (uint32_t i = 0; i < 4; ++i) {
+            const gpu::ImageBinding image{inputs[i].view, gpu::Layout::ShaderReadOnly, {}, &inputs[i]};
+            write = {};
+            write.set = sets[1]; write.binding = 2; write.first = slots[i];
+            write.type = gpu::BindingType::SampledImage; write.images = std::span(&image, 1);
+            dev.WriteBindings({&write, 1});
+        }
+    }
+    gpu::PipelineLayoutDesc layout_desc;
+    layout_desc.sets = {empty_layout, frame_layout}; layout_desc.push_bytes = sizeof(gpu::PassPush);
+    const auto layout = dev.CreatePipelineLayout(layout_desc);
+    gpu::GraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.vertex = "fullscreen.vert"; pipeline_desc.fragment = "compose.frag";
+    pipeline_desc.layout = layout; pipeline_desc.colors = {gpu::Format::R32G32B32A32Sfloat};
+    const auto pipeline = dev.CreateGraphicsPipeline(pipeline_desc);
+    gpu::RenderTarget output;
+    gpu::ImageDesc image_desc;
+    image_desc.format = gpu::Format::R32G32B32A32Sfloat; image_desc.extent = {width, 1, 1};
+    image_desc.usage = gpu::ImageUsage::ColorAttachment | gpu::ImageUsage::TransferSrc;
+    ok = pipeline && dev.CreateImage(image_desc, output.image) && ok;
+    for (int hdr = 0; hdr < 2 && ok; ++hdr) {
+        static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.x = float(hdr);
+        dev.FlushMapped(frame, 0, ~0ull);
+        dev.Submit([&](gpu::CommandList& cmd) {
+            cmd.UseTargets({{&output, gpu::Layout::ColorAttachment}});
+            cmd.BeginPass({width, 1}, {{&output, false, {}}});
+            cmd.BindPipeline(gpu::BindPoint::Graphics, pipeline);
+            cmd.BindSets(gpu::BindPoint::Graphics, layout, 0, sets);
+            gpu::PassPush push;
+            push.ids.z = 2; // TPP tonemap enabled, as in P.T.'s resident settings.
+            const float c = 7.7f * .7f / 7.0f;
+            push.f0 = glm::vec4(1.0f / (c * c), .3f, c, 0.0f);
+            cmd.PushConstants(layout, gpu::ShaderStage::All, 0, sizeof(push), &push);
+            cmd.Draw(3, 1, 0, 0); cmd.EndPass();
+            cmd.UseTargets({{&output, gpu::Layout::TransferSrc}});
+        });
+        std::vector<uint8_t> pixels;
+        ok = dev.ReadImage(output, pixels) && pixels.size() == sizeof(source[0]);
+        for (uint32_t x = 0; x < width && ok; ++x) {
+            glm::vec4 actual;
+            std::memcpy(&actual, pixels.data() + x * sizeof(actual), sizeof(actual));
+            for (int channel = 0; channel < 3; ++channel) {
+                float expected = source[2][x][channel] + source[3][x][channel];
+                if (!hdr && expected > .3f) expected = .3f + .77f - .77f * .77f / (expected - .3f + .77f);
+                ok = ok && std::isfinite(actual[channel]) && std::abs(actual[channel] - expected) < std::max(.00001f, expected * .0001f);
+            }
+        }
+    }
+    // The same real shader/descriptors exercise early bloom, the encoded LUT
+    // bridge (identity and deliberately clipping grade), and bloom composition.
+    auto bind_image = [&](uint32_t slot, const gpu::ImageResource& input) {
+        const gpu::ImageBinding image{input.view, gpu::Layout::ShaderReadOnly, {}, &input};
+        gpu::BindingWrite write;
+        write.set = sets[1]; write.binding = 2; write.first = slot;
+        write.type = gpu::BindingType::SampledImage; write.images = std::span(&image, 1);
+        dev.WriteBindings({&write, 1});
+    };
+    auto draw_post = [&](const char* shader, const gpu::PassPush& push, int hdr, std::vector<glm::vec4>* result) {
+        pipeline_desc.fragment = shader;
+        const auto post = dev.CreateGraphicsPipeline(pipeline_desc);
+        if (!post) return false;
+        static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.x = float(hdr);
+        dev.FlushMapped(frame, 0, ~0ull);
+        dev.Submit([&](gpu::CommandList& cmd) {
+            cmd.UseTargets({{&output, gpu::Layout::ColorAttachment}});
+            cmd.BeginPass({width, 1}, {{&output, false, {}}});
+            cmd.BindPipeline(gpu::BindPoint::Graphics, post);
+            cmd.BindSets(gpu::BindPoint::Graphics, layout, 0, sets);
+            cmd.PushConstants(layout, gpu::ShaderStage::All, 0, sizeof(push), &push);
+            cmd.Draw(3, 1, 0, 0); cmd.EndPass();
+            cmd.UseTargets({{&output, gpu::Layout::TransferSrc}});
+        });
+        std::vector<uint8_t> bytes;
+        const bool read = dev.ReadImage(output, bytes) && bytes.size() == width * sizeof(glm::vec4);
+        if (read) { result->resize(width); std::memcpy(result->data(), bytes.data(), bytes.size()); }
+        dev.DestroyPipeline(post);
+        return read;
+    };
+    bind_image(gpu::kImgHdr, inputs[2]);
+    bind_image(gpu::kImgBloomA, inputs[2]);
+    std::vector<glm::vec4> post_result;
+    for (int hdr = 0; hdr < 2 && ok; ++hdr) {
+        gpu::PassPush push;
+        push.f0.x = 1.0f; push.f1.x = 1.0f;
+        ok = draw_post("bright.frag", push, hdr, &post_result);
+        float previous = -1.0f;
+        for (uint32_t x = 0; x < width && ok; ++x) {
+            ok = std::isfinite(post_result[x].x) && post_result[x].x + 1e-5f >= previous;
+            if (!hdr) ok = ok && post_result[x].x <= 1.0f;
+            previous = post_result[x].x;
+        }
+        if (hdr) ok = ok && previous > 16.0f;
+        push.ids.x = gpu::kImgBloomA; push.f0 = glm::vec4(0, 1, 1, 0);
+        ok = ok && draw_post("kawase.frag", push, hdr, &post_result);
+        for (uint32_t x = 0; x < width && ok; ++x) {
+            const float expected = hdr ? source[2][x].x : std::min(source[2][x].x, 1.0f);
+            ok = std::abs(post_result[x].x - expected) < 1e-4f;
+        }
+    }
+    auto encode = [](float x) { return x <= .0031308f ? 12.92f * x : 1.055f * std::pow(x, 1.0f / 2.4f) - .055f; };
+    Texture codes;
+    codes.width = width; codes.height = 1; codes.format = gpu::Format::R32G32B32A32Sfloat;
+    std::array<glm::vec4, width> encoded;
+    for (uint32_t x = 0; x < width; ++x) {
+        encoded[x] = glm::vec4(encode(source[2][x].x), encode(source[2][x].y), encode(source[2][x].z), 1);
+    }
+    codes.levels.emplace_back(sizeof(encoded));
+    std::memcpy(codes.levels[0].data(), encoded.data(), sizeof(encoded));
+    gpu::ImageResource code_image, lut_image;
+    ok = runner.Upload(codes, code_image) && ok;
+    bind_image(gpu::kImgLdrA, code_image);
+    for (int clipping = 0; clipping < 2 && ok; ++clipping) {
+        Texture lut;
+        lut.width = 256; lut.height = 16; lut.format = gpu::Format::R32G32B32A32Sfloat;
+        lut.levels.emplace_back(256 * 16 * sizeof(glm::vec4));
+        for (int g = 0; g < 16; ++g) for (int b = 0; b < 16; ++b) for (int r = 0; r < 16; ++r) {
+            glm::vec4 v(r / 15.f, g / 15.f, b / 15.f, 1);
+            if (clipping) v = glm::min(v * 1.3f, glm::vec4(1));
+            std::memcpy(lut.levels[0].data() + (g * 256 + b * 16 + r) * sizeof(v), &v, sizeof(v));
+        }
+        ok = runner.Upload(lut, lut_image) && ok;
+        bind_image(gpu::kResColorLut, lut_image);
+        for (int sampling=0;sampling<2 && ok;++sampling) for (int hdr = 0; hdr < 2 && ok; ++hdr) {
+            gpu::PassPush push;
+            push.ids = glm::uvec4(gpu::kImgLdrA, 1, 0, 0);
+            push.f0 = glm::vec4(0, 1, 1, 1); push.f1.y = float(hdr); push.f1.z=float(sampling);
+            ok = draw_post("tonemap.frag", push, hdr, &post_result);
+            float previous = -1.0f;
+            for (uint32_t x = 0; x < width && ok; ++x) {
+                for (int c = 0; c < 3; ++c) {
+                    const float actual = post_result[x][c];
+                    ok = ok && std::isfinite(actual);
+                    if (!clipping) {
+                        const float expected = hdr ? encoded[x][c] : std::min(encoded[x][c], 1.0f);
+                        ok = ok && std::abs(actual - expected) < .001f;
+                    }
+                    if (!hdr) ok = ok && actual <= 1.0001f;
+                }
+                if (clipping && hdr) {
+                    // Protect against the old grade plateau BEFORE white as well as above it.
+                    if (x > 0 && x != 128) ok = ok && post_result[x].x > previous;
+                    if (source[2][x].x <= .18f) ok = ok && std::abs(post_result[x].x - encoded[x].x * 1.3f) < .001f;
+                }
+                previous = post_result[x].x;
+            }
+        }
+        dev.DestroyImage(lut_image);
+    }
+    if (!ok) std::printf("HDR failed stage: LUT\n");
+    // Linear bloom must add radiance continuously, including across .5 per
+    // channel and above SDR white. Use the production tonemap, not a test copy.
+    Texture zero;
+    zero.width = zero.height = 1; zero.format = gpu::Format::R32G32B32A32Sfloat;
+    zero.levels.emplace_back(sizeof(glm::vec4), 0);
+    gpu::ImageResource black;
+    ok = runner.Upload(zero, black) && ok;
+    bind_image(gpu::kImgFlare, black);
+    bind_image(gpu::kImgBloomSum, inputs[3]);
+    for (int bloom = 0; bloom < 2 && ok; ++bloom) {
+        gpu::PassPush push;
+        push.f0 = glm::vec4(float(bloom), 1, 1, 0); push.f1.y = 1;
+        ok = draw_post("tonemap.frag", push, 1, &post_result);
+        for (uint32_t x = 0; x < width && ok; ++x) for (int c = 0; c < 3; ++c) {
+            float expected = encode(source[2][x][c] + bloom * source[3][x][c]);
+            expected = expected * expected / std::sqrt(std::max(1.f / 512.f, expected * expected));
+            ok = ok && std::isfinite(post_result[x][c]) && std::abs(post_result[x][c] - expected) < .002f;
+        }
+    }
+    // DOF's first downsample decodes before filtering. At a 2:1 coordinate
+    // footprint midpoint the answer is mean LIGHT, not mean encoded RGB.
+    gpu::PassPush down;
+    down.ids.x = gpu::kImgLdrA; down.f2 = glm::vec4(width / 2, 1, 2.f / width, 1);
+    ok = ok && draw_post("dof_down.frag", down, 1, &post_result);
+    for (uint32_t x = 0; x < width / 2 && ok; ++x) for (int c = 0; c < 3; ++c) {
+        const float expected = .5f * (source[2][2*x][c] + source[2][2*x+1][c]);
+        ok = ok && std::abs(post_result[x][c] - encode(expected)) < std::max(.001f, encode(expected) * .001f);
+    }
+    // Motion-blur input round-trip and final alpha blend must preserve energy.
+    gpu::PassPush motion;
+    motion.ids = glm::uvec4(gpu::kImgLdrA, 0, 0, 0);
+    motion.f0 = glm::vec4(0, 0, 1, 1); motion.f1.z = 1;
+    ok = ok && draw_post("mb_composite.frag", motion, 1, &post_result);
+    for (uint32_t x = 0; x < width && ok; ++x) for (int c = 0; c < 3; ++c)
+        ok = ok && std::abs(post_result[x][c] - source[2][x][c]) < std::max(.001f, source[2][x][c] * .001f);
+    if (!ok) std::printf("HDR failed stage: post filtering\n");
+    // Render the same scene-linear shadow ramp through the actual SDR and HDR
+    // tonemap branches. Both must use the same toe; only highlight range differs.
+    Texture dark; dark.width=width; dark.height=1; dark.format=gpu::Format::R32G32B32A32Sfloat;
+    dark.levels.emplace_back(width*sizeof(glm::vec4));
+    auto decode=[](float x) { return x<=.04045f ? x/12.92f : std::pow((x+.055f)/1.055f,2.4f); };
+    for (uint32_t x=0;x<width;++x) {
+        const glm::vec4 v(glm::vec3(decode(.1f*x/(width-1))),1);
+        std::memcpy(dark.levels[0].data()+x*sizeof(v),&v,sizeof(v));
+    }
+    gpu::ImageResource dark_image;
+    ok=runner.Upload(dark,dark_image) && ok; bind_image(gpu::kImgHdr,dark_image);
+    for (int reserved=0;reserved<2 && ok;++reserved) {
+        static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=float(reserved); // Old smooth flag must have no effect.
+        std::vector<glm::vec4> sdr_shadow;
+        float max_difference=0;
+        for (int hdr=0;hdr<2 && ok;++hdr) {
+            gpu::PassPush p; p.f0=glm::vec4(0,1,1,0); p.f1.y=float(hdr);
+            ok=draw_post("tonemap.frag",p,hdr,&post_result) && ok;
+            float previous=-1;
+            for(uint32_t x=0;x<width && ok;++x) {
+                const float c=.1f*x/(width-1), r=c*c;
+                // Independent reference: upstream v1.0.8 ScreenTonemap, zero bloom.
+                const float expected=r/std::sqrt(std::max(1.f/512.f,r));
+                for(int channel=0;channel<3;++channel) {
+                    ok=ok && std::abs(post_result[x][channel]-expected)<2e-6f;
+                    if(hdr) max_difference=std::max(max_difference,std::abs(post_result[x][channel]-sdr_shadow[x][channel]));
+                }
+                ok=ok && post_result[x].x>=previous;
+                previous=post_result[x].x;
+            }
+            ok=ok && post_result[0].x==0;
+            if(!hdr) sdr_shadow=post_result;
+        }
+        ok=ok && max_difference<2e-6f;
+        std::printf("SDR/HDR vanilla shadow parity (reserved flag %d): max encoded RGB difference %.9g (%u samples)\n",
+                    reserved,max_difference,width);
+    }
+    static_cast<gpu::FrameData*>(frame.mapped)->hdr_output.z=0;
+    dev.DestroyImage(dark_image);
+    if (!ok) std::printf("HDR failed stage: shadow\n");
+    // All tetrahedral orderings, boundaries and HDR-representable grades.
+    // An affine cross-channel grade has an exact interpolation-independent answer.
+    Texture probes=dark;
+    std::array<glm::vec4,width> coordinates;
+    for(uint32_t x=0;x<width;++x) {
+        coordinates[x]=glm::vec4(float((x*67)%256)/255,float((x*131)%256)/255,float((x*199)%256)/255,1);
+        std::memcpy(probes.levels[0].data()+x*sizeof(glm::vec4),&coordinates[x],sizeof(glm::vec4));
+    }
+    gpu::ImageResource probe_image;
+    ok=runner.Upload(probes,probe_image) && ok; bind_image(gpu::kImgLdrA,probe_image);
+    for(int size : {16,64}) {
+        Texture lut; lut.width=size*size; lut.height=size; lut.format=gpu::Format::R32G32B32A32Sfloat;
+        lut.levels.emplace_back(size*size*size*sizeof(glm::vec4));
+        for(int b=0;b<size;++b) for(int g=0;g<size;++g) for(int r=0;r<size;++r) {
+            glm::vec4 v((.6f*r+.3f*g+.1f*b)/(size-1),(.1f*r+.7f*g+.2f*b)/(size-1),(.2f*r+.1f*g+.7f*b)/(size-1),1);
+            std::memcpy(lut.levels[0].data()+(g*size*size+b*size+r)*sizeof(v),&v,sizeof(v));
+        }
+        ok=runner.Upload(lut,lut_image) && ok; bind_image(gpu::kResColorLut,lut_image);
+        for(int sampling=0;sampling<2 && ok;++sampling) {
+            gpu::PassPush p; p.ids=glm::uvec4(gpu::kImgLdrA,1,0,0); p.f0=glm::vec4(0,1,1,1); p.f1.z=float(sampling);
+            ok=draw_post("tonemap.frag",p,0,&post_result) && ok;
+            for(uint32_t x=0;x<width && ok;++x) {
+                glm::vec3 c(coordinates[x]);
+                glm::vec3 expected(.6f*c.r+.3f*c.g+.1f*c.b,.1f*c.r+.7f*c.g+.2f*c.b,.2f*c.r+.1f*c.g+.7f*c.b);
+                ok=glm::all(glm::lessThan(glm::abs(glm::vec3(post_result[x])-expected),glm::vec3(sampling ? 2e-6f : 3e-4f)));
+                if(!ok) std::printf("LUT size %d mode %d x %u actual %.7f %.7f %.7f expected %.7f %.7f %.7f\n",size,sampling,x,post_result[x].x,post_result[x].y,post_result[x].z,expected.x,expected.y,expected.z);
+            }
+        }
+        dev.DestroyImage(lut_image);
+    }
+    if (!ok) std::printf("HDR failed stage: affine LUT\n");
+
+    // Production upstream optical kernels with HDR colour-domain fixes.
+    // Test energy preservation, original warp coordinates and no white clipping.
+    {
+        constexpr uint32_t w=192,h=108;
+        gpu::RenderTarget optics;
+        auto desc=image_desc; desc.extent={w,h,1};
+        ok=dev.CreateImage(desc,optics.image) && ok;
+        gpu::ImageResource opt_input[3];
+        std::vector<glm::vec4> pixels(w*h), result, reference;
+        auto upload=[&](int index,uint32_t slot,const std::vector<glm::vec4>& data, bool half=false) {
+            dev.DestroyImage(opt_input[index]);
+            Texture t;t.width=w;t.height=h;t.format=gpu::Format::R32G32B32A32Sfloat;
+            t.levels.emplace_back(data.size()*sizeof(glm::vec4));
+            std::memcpy(t.levels[0].data(),data.data(),t.levels[0].size());
+            if(half) {
+                t.format=gpu::Format::R16G16B16A16Sfloat;t.levels[0].resize(data.size()*8);
+                for(size_t i=0;i<data.size();++i) {
+                    const uint32_t packed[]={glm::packHalf2x16(glm::vec2(data[i])),glm::packHalf2x16(glm::vec2(data[i].z,data[i].w))};
+                    std::memcpy(t.levels[0].data()+i*8,packed,8);
+                }
+            }
+            const bool uploaded=runner.Upload(t,opt_input[index]);
+            if(uploaded) bind_image(slot,opt_input[index]);
+            return uploaded;
+        };
+        auto draw=[&](const char* shader,const gpu::PassPush& push,int hdr) {
+            pipeline_desc.fragment=shader;
+            const auto pipe=dev.CreateGraphicsPipeline(pipeline_desc);
+            if(!pipe) return false;
+            static_cast<gpu::FrameData*>(frame.mapped)->hdr_output=glm::vec4(float(hdr),0,1,0);
+            dev.FlushMapped(frame,0,~0ull);
+            dev.Submit([&](gpu::CommandList& cmd) {
+                cmd.UseTargets({{&optics,gpu::Layout::ColorAttachment}});
+                cmd.BeginPass({w,h},{{&optics,false,{}}});
+                cmd.BindPipeline(gpu::BindPoint::Graphics,pipe);
+                cmd.BindSets(gpu::BindPoint::Graphics,layout,0,sets);
+                cmd.PushConstants(layout,gpu::ShaderStage::All,0,sizeof(push),&push);
+                cmd.Draw(3,1,0,0);cmd.EndPass();
+                cmd.UseTargets({{&optics,gpu::Layout::TransferSrc}});
+            });
+            std::vector<uint8_t> bytes;
+            bool valid=dev.ReadImage(optics,bytes) && bytes.size()==w*h*sizeof(glm::vec4);
+            if(valid) {
+                result.resize(w*h);std::memcpy(result.data(),bytes.data(),bytes.size());
+                for(const auto& v:result) for(int c=0;c<4;++c) valid=valid && std::isfinite(v[c]);
+            }
+            dev.DestroyPipeline(pipe);return valid;
+        };
+        auto report=[&](const char* name,bool pass) {Check(pass,name);ok=pass && ok;};
+        gpu::PassPush lens;lens.ids.x=gpu::kImgLdrA;lens.f0.x=1;
+        pixels.assign(w*h,glm::vec4(glm::vec3(encode(16)),1));
+        bool valid=upload(0,gpu::kImgLdrA,pixels);
+        for(int hdr:{0,1}) {
+            valid=draw("screen_fx.frag",lens,hdr) && valid;
+            for(const auto& v:result) valid=valid && glm::all(glm::lessThan(glm::abs(glm::vec3(v)-glm::vec3(encode(16))),glm::vec3(.0001f)));
+        }
+        report("HDR lens preserves constant HDR radiance in SDR/HDR modes",valid);
+        for(uint32_t y=0;y<h;++y) for(uint32_t x=0;x<w;++x)
+            pixels[y*w+x]=glm::vec4(encode(4*(x+.5f)/w),encode(4*(y+.5f)/h),encode(4*(x+.5f)/w),1);
+        valid=upload(0,gpu::kImgLdrA,pixels) && draw("screen_fx.frag",lens,1);
+        for(uint32_t y=0;y<h;++y) for(uint32_t x=0;x<w;++x) {
+            const glm::vec2 uv((x+.5f)/w,(y+.5f)/h),q=uv*2.f-1.f;
+            const float radius=std::clamp(glm::length(q)*.52240777f,0.f,1.f),dome=1-std::sin(1.5707964f*radius);
+            const glm::vec2 offset=std::pow(radius,1.75f)*84.f*glm::vec2(1.f/1920,1.f/1080)*q/std::sqrt(glm::dot(q,q)+dome*dome);
+            const float dispersion[]={1.42f,1.275f,1.12f};
+            for(int c=0;c<3;++c) {
+                const int axis=c==1?1:0;const float size=c==1?float(h):float(w);
+                const float coordinate=std::clamp((uv*.9f+.050000012f+offset*dispersion[c])[axis],.5f/size,1-.5f/size);
+                valid=valid && std::abs(result[y*w+x][c]-encode(4*coordinate))<.006f;
+            }
+        }
+        report("HDR lens retains authored warp / RGB fringe coordinates",valid);
+        lens.f0.x=0;valid=draw("screen_fx.frag",lens,1);
+        for(size_t i=0;i<pixels.size();++i) valid=valid && glm::all(glm::lessThan(glm::abs(result[i]-pixels[i]),glm::vec4(1e-6f)));
+        report("HDR lens disabled is exact identity",valid);lens.f0.x=1;
+        for(uint32_t y=0;y<h;++y) for(uint32_t x=0;x<w;++x)
+            pixels[y*w+x]=glm::vec4(glm::vec3(encode(((x/2+y/2)&1)?16.f:0.f)),1);
+        valid=upload(0,gpu::kImgLdrA,pixels) && draw("screen_fx.frag",lens,1);
+        for(const auto& v:result) for(int c=0;c<3;++c) valid=valid && v[c]>=-1e-6f && v[c]<=encode(16)+1e-5f;
+        report("HDR lens checker has no negative or super-white ringing",valid);
+        gpu::PassPush dof;dof.ids=glm::uvec4(gpu::kImgLdrA,gpu::kImgLdrA,0,0);
+        dof.f0=glm::vec4(1.f/w,1.f/h,0,0);dof.f1=glm::vec4(1,0,1,0);dof.f2=glm::vec4(w,h,1.f/w,1.f/h);
+        pixels.assign(w*h,glm::vec4(4,2,1,1));
+        valid=upload(0,gpu::kImgLdrA,pixels) && draw("dof_blur.frag",dof,1);
+        for(const auto& v:result) valid=valid && glm::all(glm::lessThan(glm::abs(glm::vec3(v)-glm::vec3(4,2,1)),glm::vec3(1e-4f)));
+        report("HDR far DOF conserves uniform HDR light",valid);
+        // Original near blur uses straight RGB plus CoC, not premultiplied layers.
+        dof.ids.z=1;pixels.assign(w*h,glm::vec4(4,2,1,.2f));
+        valid=upload(0,gpu::kImgLdrA,pixels) && draw("dof_blur.frag",dof,1);
+        for(const auto& v:result) valid=valid && glm::all(glm::lessThan(glm::abs(v-glm::vec4(4,2,1,.2f)),glm::vec4(1e-4f)));
+        report("HDR near DOF preserves uniform radiance and original CoC",valid);
+        gpu::PassPush mb;mb.ids=glm::uvec4(gpu::kImgLdrA,gpu::kImgMbBake,1,0);
+        mb.f0=glm::vec4(.5f,.5f,1,1);
+        pixels.assign(w*h,glm::vec4(4,2,1,1));valid=upload(0,gpu::kImgLdrA,pixels);
+        pixels.assign(w*h,glm::vec4(0,0.5f,0.5f,0.5f));valid=upload(1,gpu::kImgMbBake,pixels,true) && draw("mb_mcguire.frag",mb,1) && valid;
+        for(const auto& v:result) valid=valid && glm::vec3(v)==glm::vec3(4,2,1) && v.a==0;
+        report("HDR zero motion is exact RGB identity",valid);
+        pixels.assign(w*h,glm::vec4(.5f,.5f,.75f,.5f));
+        valid=upload(1,gpu::kImgMbBake,pixels,true);
+        pixels.assign(w*h,glm::vec4(16,8,4,1));
+        valid=upload(0,gpu::kImgLdrA,pixels) && draw("mb_mcguire.frag",mb,1);
+        for(const auto& v:result) valid=valid && glm::all(glm::lessThan(glm::abs(glm::vec3(v)-glm::vec3(16,8,4)),glm::vec3(1e-4f)));
+        report("HDR motion filter preserves HDR light with no white clamp",valid);
+        for(auto& input:opt_input) dev.DestroyImage(input);
+        dev.DestroyImage(optics.image);
+    }
+    dev.DestroyImage(probe_image);
+    dev.DestroyImage(black);
+    dev.DestroyImage(code_image);
+    dev.WaitIdle();
+    dev.DestroyPipeline(pipeline); dev.DestroyPipelineLayout(layout); dev.DestroyBindingPool(pool);
+    dev.DestroyBindingLayout(frame_layout); dev.DestroyBindingLayout(empty_layout);
+    dev.DestroySampler(linear_sampler); dev.DestroySampler(sampler); dev.DestroyBuffer(frame); dev.DestroyImage(output.image);
+    for (auto& input : inputs) dev.DestroyImage(input);
+    return ok;
+}
 
 bool DepthRun(gpu::Device& dev, DepthPicture& out) {
     constexpr uint32_t kW = 160;
@@ -1713,8 +2173,18 @@ int main(int argc, char** argv) {
     GpuRunner d3d12(*device);
     std::unique_ptr<gpu::vk::Device> vk_device = have_vulkan ? std::make_unique<gpu::vk::Device>(vulkan.Context()) : nullptr;
     std::unique_ptr<GpuRunner> rhi_vulkan = vk_device ? std::make_unique<GpuRunner>(*vk_device) : nullptr;
+    Check(HdrComposeRun(*device), "D3D12 production compose/bloom/LUT/DOF/motion blur preserve HDR radiance, linear filtering and SDR bounds");
+    Check(vk_device && HdrComposeRun(*vk_device), "Vulkan production compose/bloom/LUT/DOF/motion blur preserve HDR radiance, linear filtering and SDR bounds");
     std::vector<Case> cases = {CompositeCase(true), CompositeCase(false), XrCopyCase(), UiCase(), CullCase(gpu::CullMode::Back),
                                CullCase(gpu::CullMode::Front)};
+    Case rcas = CompositeCase(false);
+    rcas.name = "composite_rcas";
+    rcas.draws = {{0, 3, Floats({1,1,0,0, 0,0,0,0, 0,0,0,1, 0,0,1,0, 200,1000,1,0})}};
+    cases.push_back(rcas);
+    Case improved = CompositeCase(true);
+    improved.name = "composite_perceptual_grain_ui";
+    improved.draws = {{0, 3, Floats({1,1,1,0, 0,0,0,0, 1,2,.7f,0, .137f,.291f,1.2f,0, 200,1000,0,1})}};
+    cases.push_back(improved);
     double cull_coverage[2][2] = {};
     for (const Case& c : cases) {
         Picture raw_image;
@@ -1821,6 +2291,13 @@ int main(int argc, char** argv) {
               std::format("timestamps around the dispatch: Vulkan {} ticks ({:.1f} us), D3D12 {} ticks ({:.1f} us)", vk_result.ticks,
                           vk_device ? vk_result.ticks * vk_device->Info().timestamp_period_ns / 1000.0 : 0.0, dx_result.ticks,
                           dx_result.ticks * device->Info().timestamp_period_ns / 1000.0));
+    }
+    for (float level : {0.0f, 0.001f, 0.18f, 4.0f, 100000.0f}) {
+        ComputeResult vk_meter, dx_meter;
+        bool ok = vk_device && ComputeRun(*vk_device,vk_meter,true,level) && ComputeRun(*device,dx_meter,true,level);
+        Check(ok && std::abs(vk_meter.metered-level)<std::max(1e-6f,level*1e-5f) &&
+              std::abs(dx_meter.metered-level)<std::max(1e-6f,level*1e-5f),
+              std::format("luminance.comp covered/uncovered HDR level {}: Vulkan {}, D3D12 {}",level,vk_meter.metered,dx_meter.metered));
     }
     const bool vk_one = (cull_coverage[0][0] > 0.99) != (cull_coverage[1][0] > 0.99);
     const bool same = (cull_coverage[0][0] > 0.99) == (cull_coverage[0][1] > 0.99) && (cull_coverage[1][0] > 0.99) == (cull_coverage[1][1] > 0.99);

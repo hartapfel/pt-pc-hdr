@@ -51,26 +51,30 @@ int main() {
 
     {
         bool identity = true, monotonic = true, bounded = true, smooth = true;
-        for (float ratio : {1.2f, 2.0f, 5.0f, 10.0f, 50.0f}) {
+        for (float ratio : {1.0f, 1.2f, 2.0f, 5.0f, 10.0f, 50.0f}) {
             float previous = 0.0f;
             for (float m = 0.0f; m <= 20.0f; m += 0.01f) {
                 const float s = pt::render::HdrShoulder(m, ratio);
-                if (m <= 1.0f) identity &= s == m;
+                if (m <= std::min(1.0f, .8f * ratio)) identity &= s == m;
                 monotonic &= s >= previous - 1.0e-5f;
                 bounded &= s <= ratio + 1.0e-4f;
-                const float width = std::min(pt::render::kHdrSourceWhite - 1.0f, 2.97f * (ratio - 1.0f));
-                smooth &= std::abs(s - previous) <= 1.6f * std::max(1.0f, (ratio - 1.0f) / width) * 0.01f + 1.0e-4f;
+                smooth &= std::abs(s - previous) <= 0.0101f;
                 previous = s;
             }
         }
-        check(identity, "highlight curve leaves the SDR range untouched");
+        check(identity, "highlight curve leaves values below its knee untouched");
         check(monotonic, "highlight curve never falls");
         check(bounded, "highlight curve never passes the peak");
         check(smooth, "highlight curve has no jump");
-        check(std::abs(pt::render::HdrShoulder(1.0f, 5.0f) - 1.0f) < 1.0e-6f && pt::render::HdrShoulder(3.0f, 5.0f) == 5.0f &&
-                  pt::render::HdrShoulder(100.0f, 5.0f) == 5.0f,
-              "highlight curve starts at paper white and holds the peak from the source white");
-        check(pt::render::HdrShoulder(7.0f, 1.0f) == 1.0f, "no headroom, no highlights");
+        check(pt::render::HdrShoulder(1.0f, 5.0f) == 1.0f && pt::render::HdrShoulder(3.0f, 5.0f) < pt::render::HdrShoulder(10.0f, 5.0f) &&
+                  pt::render::HdrShoulder(10.0f, 5.0f) < pt::render::HdrShoulder(100.0f, 5.0f),
+              "highlight detail survives above the old fixed source-white clip");
+        check(std::abs((pt::render::HdrShoulder(1.0001f, 5.0f) - 1.0f) / 0.0001f - 1.0f) < 0.002f,
+              "highlight curve joins SDR with unit slope");
+        check(pt::render::HdrShoulder(3.0f, 50.0f) <= 3.0f && pt::render::HdrShoulder(100.0f, 5.0f) < 5.0f,
+              "display headroom does not amplify scene light or flatten finite highlights");
+        check(pt::render::HdrShoulder(2.0f, 1.0f) < pt::render::HdrShoulder(7.0f, 1.0f) && pt::render::HdrShoulder(7.0f, 1.0f) < 1.0f,
+              "peak equal to paper white still has a smooth roll-off");
         check(pt::render::ResolveHdrPeak(0.0f, 0.0f) == 1000.0f && pt::render::ResolveHdrPeak(0.0f, 800.0f) == 800.0f &&
                   pt::render::ResolveHdrPeak(1500.0f, 800.0f) == 1500.0f && pt::render::ResolveHdrPeak(0.0f, 20000.0f) == 4000.0f &&
                   pt::render::ResolveHdrPeak(100.0f, 0.0f) == 400.0f,

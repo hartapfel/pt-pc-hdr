@@ -15,10 +15,13 @@ layout(location = 0) out vec4 out_color;
 void main() {
     vec2 block = ImgSize(IMG_HDR) / ImgSize(IMG_BLOOM_A);
     vec4 t = ImgFetch(IMG_HDR, ivec2(floor(floor(gl_FragCoord.xy) * block + 0.5 * block)));
-    vec3 x = clamp(t.rgb * pass.f1.x, 0.0, 1.0);
+    vec3 x = max(t.rgb * pass.f1.x, vec3(0.0));
+    bool hdr = frame.hdr_output.x > 0.5;
+    float scale = hdr ? max(1.0, max(x.r, max(x.g, x.b))) : 1.0;
+    x = hdr ? x / scale : min(x, vec3(1.0));
     float l1 = Luma709(x);
     float l2 = l1 * l1;
     float l3 = l2 * l1;
     float w = pass.f0.x * min(l1, 32.0) + pass.f0.y * min(l2, 32.0) + pass.f0.z * min(l3, 32.0) + pass.f0.w * min(l3 * l1, 32.0);
-    out_color = vec4(clamp(x * w, 0.0, 1.0), 1.0);
+    out_color = vec4(hdr ? SceneRadiance(x * w * scale, 1.0, true) : clamp(x * w, 0.0, 1.0), 1.0);
 }

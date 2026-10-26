@@ -300,7 +300,7 @@ set(PT_REFLECTION_MIX_SHADER "${CMAKE_BINARY_DIR}/tests/reflection_mix_test.comp
 add_custom_command(OUTPUT "${PT_REFLECTION_MIX_SHADER}"
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/tests"
   COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O -I "${CMAKE_SOURCE_DIR}/shaders" "${CMAKE_SOURCE_DIR}/tests/reflection_mix_test.comp" -o "${PT_REFLECTION_MIX_SHADER}"
-  DEPENDS tests/reflection_mix_test.comp shaders/common.glsl shaders/reflection_blend.glsl shaders/reflection_mix.glsl shaders/mirror_temporal.glsl shaders/flashlight_reactivity.glsl VERBATIM)
+  DEPENDS tests/reflection_mix_test.comp shaders/radiance.glsl shaders/srgb.glsl shaders/common.glsl shaders/reflection_blend.glsl shaders/reflection_mix.glsl shaders/mirror_temporal.glsl shaders/flashlight_reactivity.glsl VERBATIM)
 add_custom_target(pt_reflection_mix_shader DEPENDS "${PT_REFLECTION_MIX_SHADER}")
 add_executable(pt_reflection_mix_test tests/reflection_mix_test.cpp)
 target_link_libraries(pt_reflection_mix_test PRIVATE pt_engine)
@@ -367,8 +367,16 @@ endif()
 add_executable(pt_dualshock_audio_test tests/dualshock_audio_test.cpp)
 target_link_libraries(pt_dualshock_audio_test PRIVATE pt_engine)
 
+add_executable(pt_exposure_test tests/exposure_test.cpp)
+target_link_libraries(pt_exposure_test PRIVATE pt_engine)
 add_executable(pt_hdr_output_test tests/hdr_output_test.cpp)
 target_link_libraries(pt_hdr_output_test PRIVATE pt_engine)
+add_executable(pt_hdr_pipeline_test tests/hdr_pipeline_test.cpp)
+target_link_libraries(pt_hdr_pipeline_test PRIVATE pt_engine)
+if(WIN32)
+  target_link_libraries(pt_hdr_pipeline_test PRIVATE pt_gpu_d3d12)
+endif()
+add_dependencies(pt_hdr_pipeline_test pt_shaders)
 add_executable(pt_d3d12_hdr_framegen_test tests/d3d12_hdr_framegen_test.cpp)
 target_include_directories(pt_d3d12_hdr_framegen_test PRIVATE src)
 add_executable(pt_composite_output_test tests/composite_output_test.cpp)

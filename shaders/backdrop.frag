@@ -66,6 +66,7 @@ void main() {
         bg.b = texture(PT_TEX2D(tex), clamp(uv - vec2(split, 0.0), 0.0, 1.0)).b;
     }
     bg = clamp(bg, 0.0, 1.0) * pass.f1.rgb * (1.0 - clamp(pass.f0.y, 0.0, 1.0));
-    vec3 c = clamp(scene + bg * (1.0 - covered) * clamp(pass.f0.x, 0.0, 1.0), 0.0, 1.0);
+    vec3 c = scene + bg * (1.0 - covered) * clamp(pass.f0.x, 0.0, 1.0);
+    c = pass.f2.y > 0.0 ? max(c, vec3(0.0)) : clamp(c, 0.0, 1.0);
     out_color = vec4(c, Luma601(c));
 }

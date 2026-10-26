@@ -455,6 +455,8 @@ def main():
     if (build / "licenses").is_dir():
         shutil.copytree(build / "licenses", root / "licenses",
                         ignore=shutil.ignore_patterns("enhanced-textures", "Real-ESRGAN-*.txt", "bc7enc.txt"))
+    (root / "licenses").mkdir(exist_ok=True)
+    shutil.copy2(REPO / "docs" / "hdr-post-licenses.txt", root / "licenses" / "hdr-post-licenses.txt")
     shutil.copy2(REPO / "README.md", root / "README.md")
     try:
         refuse_loose_data(root)

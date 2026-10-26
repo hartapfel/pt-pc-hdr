@@ -199,11 +199,11 @@ bool SceneRenderer::EnsurePathTargets() {
     const gpu::ImageUsageFlags usage = gpu::ImageUsage::Storage | gpu::ImageUsage::TransferDst | gpu::ImageUsage::TransferSrc;
     bool ok = true;
     for (uint32_t i = 0; i < RayTracing::kPathImages32 && ok; ++i) {
-        ok = CreateTarget(pt_images32_[i], gpu::Format::R32G32B32A32Sfloat, extent_, usage, gpu::Aspect::Color);
+        ok = CreateTarget(pt_images32_[i], gpu::Format::R32G32B32A32Sfloat, i < 4 ? extent_ : half, usage, gpu::Aspect::Color);
         views32[i] = pt_images32_[i].image.view;
     }
     for (uint32_t i = 0; i < RayTracing::kPathImages16 && ok; ++i) {
-        ok = CreateTarget(pt_images16_[i], gpu::Format::R16G16B16A16Sfloat, i == 0 || i >= 7 ? extent_ : half, usage, gpu::Aspect::Color);
+        ok = CreateTarget(pt_images16_[i], gpu::Format::R16G16B16A16Sfloat, extent_, usage, gpu::Aspect::Color);
         views16[i] = pt_images16_[i].image.view;
     }
     if (!ok) {
@@ -220,8 +220,8 @@ bool SceneRenderer::EnsurePathTargets() {
             value.float32[0] = x;
             cmd.ClearColorImage(t.image, gpu::Layout::General, value, 1, 1);
         };
-        for (RenderTarget& t : pt_images32_) {
-            clear(t, -1.0f);
+        for (uint32_t i = 0; i < RayTracing::kPathImages32; ++i) {
+            clear(pt_images32_[i], i < 4 ? -1.0f : 0.0f);
         }
         for (RenderTarget& t : pt_images16_) {
             clear(t, 0.0f);
@@ -405,8 +405,8 @@ void SceneRenderer::RecordPathTrace(gpu::CommandList& cmd, const ViewSetup& view
 }
 
 void SceneRenderer::RecordPathLayers(gpu::CommandList& cmd, const ViewSetup& view) {
-    cmd.UseTargets({{&pt_images16_[8], gpu::Layout::General}, {&pt_images16_[9], gpu::Layout::General},
-                     {&pt_images16_[10], gpu::Layout::General}, {&depth_, gpu::Layout::DepthReadOnly},
+    cmd.UseTargets({{&pt_images16_[2], gpu::Layout::General}, {&pt_images16_[3], gpu::Layout::General},
+                     {&pt_images16_[4], gpu::Layout::General}, {&depth_, gpu::Layout::DepthReadOnly},
                      {&diffuse_, gpu::Layout::ColorAttachment}, {&specular_, gpu::Layout::ColorAttachment}});
     BindSets(cmd, gpu::BindPoint::Graphics);
     cmd.BeginPass(ViewArea(view), {{&diffuse_, false, {}}, {&specular_, false, {}}});
@@ -426,7 +426,7 @@ void SceneRenderer::RecordPathLayers(gpu::CommandList& cmd, const ViewSetup& vie
 }
 
 void SceneRenderer::RecordRrGuides(gpu::CommandList& cmd, const ViewSetup& view) {
-    cmd.UseTargets({{&pt_images16_[7], gpu::Layout::General}, {&pt_images16_[8], gpu::Layout::General}, {&rt_full_images_[10], gpu::Layout::General},
+    cmd.UseTargets({{&pt_images16_[1], gpu::Layout::General}, {&pt_images16_[2], gpu::Layout::General}, {&rt_full_images_[10], gpu::Layout::General},
                      {&depth_, gpu::Layout::DepthReadOnly}, {&normal_, gpu::Layout::ShaderReadOnly},
                      {&material_, gpu::Layout::ShaderReadOnly}, {&albedo_, gpu::Layout::ShaderReadOnly},
                      {&rr_diffuse_albedo_, gpu::Layout::ColorAttachment}, {&rr_specular_albedo_, gpu::Layout::ColorAttachment},

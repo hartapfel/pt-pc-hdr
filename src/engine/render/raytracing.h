@@ -60,8 +60,8 @@ public:
     static constexpr uint32_t kFullDepthFirst = 4;
     static constexpr uint32_t kFullDepthImages = 2;
     virtual void SetFullImages(std::span<const gpu::ImageViewHandle> views) = 0;
-    static constexpr uint32_t kPathImages32 = 4;
-    static constexpr uint32_t kPathImages16 = 11;
+    static constexpr uint32_t kPathImages32 = 10; // reservoirs, reference, and HDR denoiser statistics
+    static constexpr uint32_t kPathImages16 = 5;
     virtual void SetPathImages(std::span<const gpu::ImageViewHandle> views32, std::span<const gpu::ImageViewHandle> views16) = 0;
     virtual gpu::BufferResource PathRemap(uint32_t slot) const = 0;
     virtual gpu::PipelineLayoutHandle Layout() const = 0;

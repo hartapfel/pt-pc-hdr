@@ -149,7 +149,7 @@ vec3 CameraPath(vec2 frag, inout uint rng) {
         }
         if (m.kind == KIND_SKY || m.kind == KIND_CONSTANT) {
             vec4 tex = textureLod(PT_TEX2D(m.albedo), ps.uv, 0.0);
-            return radiance + throughput * min(vec3(32.0), m.albedo_factor.rgb * tex.rgb * m.params.y) * Saturate(m.albedo_factor.a * tex.a);
+            return radiance + throughput * SceneRadiance(m.albedo_factor.rgb * tex.rgb * m.params.y, 32.0, frame.hdr_output.x > 0.5) * Saturate(m.albedo_factor.a * tex.a);
         }
         if (m.kind != KIND_DEFERRED) {
             return radiance;

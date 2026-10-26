@@ -2,6 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "bindless.glsl"
+#include "radiance.glsl"
 layout(set = 0, binding = 0) uniform PT_TEXTURE2D_ARRAY textures[];
 layout(set = 0, binding = 2) uniform PT_TEXTURECUBE_ARRAY cube_textures[];
 layout(set = 1, binding = 1) uniform sampler2D depth_texture;
@@ -153,7 +154,7 @@ void TppFog(vec3 eye, vec3 point, out vec3 inscatter, out float transmittance) {
     vec3 directional = ray.w * (mie.rgb * mie_phase + ray.rgb * rayleigh_phase) / max(vec3(1.0e-6), sigma);
     float opacity = 1.0 - exp(-depth);
     vec3 color = g1.rgb + directional * (1.0 - exp(-depth * sigma));
-    inscatter = clamp(color * opacity, 0.0, 1.0);
+    inscatter = SceneRadiance(max(color * opacity, vec3(0.0)), 1.0, fog_block.mode.y != 0u);
     transmittance = 1.0 - opacity;
 }
 

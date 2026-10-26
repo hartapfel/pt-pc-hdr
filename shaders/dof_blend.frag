@@ -1,5 +1,6 @@
 #version 460
 #include "common.glsl"
+#include "post_filter.glsl"
 
 layout(push_constant) uniform PassPush {
     uvec4 ids;
@@ -14,10 +15,10 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     vec2 uv = pass.f2.zw * (gl_FragCoord.xy - 0.00390625);
-    vec4 sharp = Img(pass.ids.x, SMP_LINEAR_CLAMP, uv);
-    vec4 near = Img(pass.ids.y, SMP_LINEAR_CLAMP, uv);
-    vec4 far = Img(pass.ids.z, SMP_LINEAR_CLAMP, uv);
+    vec4 sharp = PostLinearSample(pass.ids.x, uv);
+    vec4 near = PostLinearSample(pass.ids.y, uv);
+    vec4 far = PostLinearSample(pass.ids.z, uv);
     vec3 c = mix(sharp.rgb, far.rgb, pass.f0.z * Saturate(pass.f0.x * Saturate(2.0 * sharp.w - 1.0)));
     c = mix(c, near.rgb, pass.f0.w * Saturate(near.w * pass.f0.y));
-    out_color = vec4(c, 1.0);
+    out_color = vec4(PostEncode(c), 1.0);
 }

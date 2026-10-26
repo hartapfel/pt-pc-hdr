@@ -1,8 +1,6 @@
 #version 460
 #include "common.glsl"
-
 layout(local_size_x = 16, local_size_y = 16) in;
-
 layout(push_constant) uniform PassPush {
     uvec4 ids;
     vec4 f0;
@@ -10,65 +8,25 @@ layout(push_constant) uniform PassPush {
     vec4 f2;
     mat4 m;
 } pass;
-
-layout(std430, set = 1, binding = 5) buffer LuminanceOut {
-    vec2 partial[];
-};
-
-float Half(float v) {
-    return unpackHalf2x16(packHalf2x16(vec2(v, 0.0))).x;
-}
-
-vec3 Diffuse(ivec2 p, ivec2 size) {
-    return ImgFetch(IMG_DIFFUSE, clamp(p, ivec2(0), size - 1)).rgb;
-}
-
-vec3 QuarterTexel(ivec2 q, ivec2 quarter, ivec2 size) {
-    vec2 c = vec2(size) * ((vec2(q) + 0.5) / vec2(quarter));
-    ivec2 p0 = ivec2(floor(c));
-    vec2 f = c - vec2(p0);
-    vec3 a = mix(Diffuse(p0, size), Diffuse(p0 + ivec2(1, 0), size), f.x);
-    vec3 b = mix(Diffuse(p0 + ivec2(0, 1), size), Diffuse(p0 + ivec2(1, 1), size), f.x);
-    return mix(a, b, f.y);
-}
-
-vec2 MeterTexel(ivec2 t) {
-    t = ivec2(uvec2(t + 128) & 127u);
-    ivec2 size = ivec2(ImgSize(IMG_DIFFUSE));
-    ivec2 quarter = max(size >> 2, ivec2(1));
-    vec2 uv = (vec2(t) + 0.5) / 128.0 + 0.5 / vec2(quarter);
-    ivec2 q = ivec2(floor(uv * vec2(quarter))) % quarter;
-    ivec2 d = min(ivec2(floor(uv * vec2(size))), size - 1);
-    float depth = ImgFetch(IMG_DEPTH, d).x;
-    float y = 0.0;
-    if (depth > 0.0) {
-        vec3 c = QuarterTexel(q, quarter, size);
-        y = max(0.0, c.r * 0.21252441 + c.g * 0.71533203 + c.b * 0.07208252);
-        /* one NaN or infinite texel would turn the whole measurement and the eye adaptation with it */
-        if (isnan(y) || isinf(y)) {
-            y = 0.0;
-        }
-    }
-    return vec2(Half(y), depth > 0.0 ? 1.0 : 0.0);
-}
-
+layout(std430, set = 1, binding = 5) buffer LuminanceOut { vec2 partial[]; };
 void main() {
     ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
-    if (any(greaterThanEqual(cell, ivec2(32)))) {
-        return;
+    if (any(greaterThanEqual(cell, ivec2(32)))) return;
+    ivec2 size = ivec2(ImgSize(IMG_DIFFUSE));
+    float sum = 0.0, weight = 0.0;
+    // Distributed 128x128 grid; no FP16 re-quantization or log offset.
+    for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+        vec2 uv = (vec2(cell * 4 + ivec2(x, y)) + 0.5) / 128.0;
+        ivec2 p = min(ivec2(uv * vec2(size)), size - 1);
+        float depth = ImgFetch(IMG_DEPTH, p).x;
+        vec3 c = ImgFetch(IMG_DIFFUSE, p).rgb;
+        float l = dot(max(c, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
+        if (depth > 0.0 && !isnan(l) && !isinf(l)) {
+            vec2 center = uv * 2.0 - 1.0;
+            float w = 0.25 + 0.75 * exp(-2.0 * dot(center, center));
+            sum += l * w;
+            weight += w;
+        }
     }
-    int x = cell.x * 4;
-    int y = cell.y * 4;
-    vec2 a = MeterTexel(ivec2(x + 3, y - 1));
-    vec2 b = MeterTexel(ivec2(x + 4, y - 1));
-    vec2 c = MeterTexel(ivec2(x + 3, y));
-    vec2 d = MeterTexel(ivec2(x + 4, y));
-    vec2 e = MeterTexel(ivec2(x - 1, y - 1));
-    vec2 f = MeterTexel(ivec2(x, y - 1));
-    vec2 g = MeterTexel(ivec2(x - 1, y));
-    vec2 h = MeterTexel(ivec2(x, y));
-    float t1 = 0.25 * (a.x + b.x + c.x + d.x);
-    float t2 = 0.25 * (e.x + f.x + g.x + h.x);
-    float solid = min(min(min(a.y, b.y), min(c.y, d.y)), min(min(e.y, f.y), min(g.y, h.y)));
-    partial[cell.y * 32 + cell.x] = vec2(Half(0.25 * (3.0 * t1 + t2)), solid);
+    partial[cell.y * 32 + cell.x] = vec2(weight > 0.0 ? sum / weight : 0.0, weight);
 }

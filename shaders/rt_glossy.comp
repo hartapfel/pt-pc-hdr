@@ -57,7 +57,7 @@ vec4 GlossyLayers(vec3 origin, vec3 ray, float t_end) {
         if (m.kind == KIND_CONSTANT) {
             vec4 tex = textureLod(PT_TEX2D(m.albedo), hs.uv, 2.0);
             float a = Saturate(m.albedo_factor.a * tex.a);
-            sum += seen * min(vec3(32.0), m.albedo_factor.rgb * tex.rgb * m.params.y) * a;
+            sum += seen * SceneRadiance(m.albedo_factor.rgb * tex.rgb * m.params.y, 32.0, frame.hdr_output.x > 0.5) * a;
             seen *= 1.0 - a;
         }
         t_start = rayQueryGetIntersectionTEXT(rq, true) + 1.0e-3;
@@ -135,7 +135,7 @@ void main() {
             vec3 hit = origin + dir * travel;
             if (m.kind == KIND_CONSTANT || m.kind == KIND_SKY) {
                 vec4 tex = textureLod(PT_TEX2D(m.albedo), hs.uv, 2.0);
-                result = min(vec3(32.0), m.albedo_factor.rgb * tex.rgb * m.params.y) * Saturate(m.albedo_factor.a * tex.a);
+                result = SceneRadiance(m.albedo_factor.rgb * tex.rgb * m.params.y, 32.0, frame.hdr_output.x > 0.5) * Saturate(m.albedo_factor.a * tex.a);
             } else if (m.kind == KIND_DEFERRED) {
                 vec3 albedo = (m.flags & MAT_CONSTANT_COLOR) != 0u ? m.albedo_factor.rgb : textureLod(PT_TEX2D(m.albedo), hs.uv, 2.0).rgb;
                 vec3 ambient = RtFullAmbient(hit, hs.normal, pass.ids.w);
@@ -148,5 +148,5 @@ void main() {
     if (any(isnan(result)) || any(isinf(result))) {
         result = vec3(0.0);
     }
-    imageStore(rt_glossy_raw, half_pixel, vec4(min(result, vec3(64.0)), travel));
+    imageStore(rt_glossy_raw, half_pixel, vec4(SceneRadiance(result, 64.0, frame.hdr_output.x > 0.5), travel));
 }

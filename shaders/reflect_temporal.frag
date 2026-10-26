@@ -90,5 +90,5 @@ void main() {
     }
     result = max(result, vec4(0.0));
     out_history = result;
-    out_color = result.a > 0.0 && pass.f1.w < 0.5 ? vec4(SrgbDecode(ReflectionBlendBase(base.rgb, pass.ids.w != 0u) * (1.0 - result.a) + result.rgb), base.a) : base;
+    out_color = result.a > 0.0 && pass.f1.w < 0.5 ? vec4(SrgbDecode(ReflectionBlendColor(base.rgb, pass.ids.w != 0u) * (1.0 - result.a) + result.rgb), base.a) : base;
 }

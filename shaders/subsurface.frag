@@ -24,7 +24,7 @@ vec3 LightAt(vec2 uv) {
 }
 
 bool Skin(vec2 uv) {
-    return int(255.0 * Img(IMG_MATERIAL, SMP_POINT_CLAMP, uv).z) == 10;
+    return int(255.0 * Img(IMG_MATERIAL, SMP_POINT_CLAMP, uv).z + 0.5) == 10;
 }
 
 void main() {

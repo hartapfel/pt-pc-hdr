@@ -94,6 +94,9 @@ bool Renderer::Init(SDL_Window* window, const RendererSettings& settings) {
     ctx_.pipeline_cache_dir = settings.pipeline_cache_dir;
     ctx_.hdr_paper_nits = render::ClampHdrPaperWhite(static_cast<float>(settings.hdr_paper_white));
     ctx_.hdr_peak_setting = settings.hdr_peak;
+    SetHdrSdrEotf(settings.hdr_sdr_eotf);
+    hdr_color = settings.hdr_color;
+    hdr_ui_brightness = settings.hdr_ui_brightness;
     window_ = settings.headless ? nullptr : window;
     if (settings.backend == gpu::Backend::D3D12) {
         return InitD3D12(settings);
@@ -258,9 +261,6 @@ bool Renderer::CreateTargets(uint32_t width, uint32_t height) {
     if (!make(final_, final_format_, ImageUsage::ColorAttachment | ImageUsage::Sampled)) {
         return false;
     }
-    if (!make(hdr_boost_, kHdrBoostFormat, ImageUsage::ColorAttachment | ImageUsage::Sampled)) {
-        return false;
-    }
     if (!make(ui_top_, final_format_, ImageUsage::ColorAttachment | ImageUsage::Sampled)) {
         return false;
     }
@@ -278,7 +278,7 @@ void Renderer::WriteCompositeSets() {
     }
     const gpu::ImageViewHandle noise = grain_noise_ ? grain_noise_ : scene_color_.view;
     const gpu::ImageBinding infos[4] = {Bind(scene_color_.view, linear_sampler_), Bind(final_.view, linear_sampler_),
-                                        Bind(hdr_boost_.view, linear_sampler_), Bind(noise, wrap_sampler_)};
+                                        Bind(noise, wrap_sampler_), Bind(noise, wrap_sampler_)};
     gpu::BindingWrite writes[4];
     for (int i = 0; i < 4; ++i) {
         writes[i] = {i % 2 == 0 ? composite_set_ : final_set_, static_cast<uint32_t>(i < 2 ? 0 : 1), 0, gpu::BindingType::CombinedImageSampler,
@@ -309,7 +309,6 @@ void Renderer::SetGrainNoise(gpu::ImageViewHandle view) {
 
 void Renderer::DestroyTargets() {
     gpu_->DestroyImage(scene_color_);
-    gpu_->DestroyImage(hdr_boost_);
     gpu_->DestroyImage(final_);
     gpu_->DestroyImage(ui_top_);
     gpu_->DestroyImage(output_);
@@ -348,7 +347,7 @@ bool Renderer::CreateCompositePipeline(gpu::Format output_format) {
 
     gpu::PipelineLayoutDesc layout_info;
     layout_info.sets = {composite_set_layout_};
-    layout_info.push_bytes = 80;
+    layout_info.push_bytes = 128;
     layout_info.push_stages = gpu::ShaderStage::Fragment;
     composite_layout_ = gpu_->CreatePipelineLayout(layout_info);
     return BuildCompositePipeline(output_format, composite_pipeline_) && BuildCompositePipeline(final_format_, final_composite_pipeline_) &&
@@ -380,7 +379,7 @@ bool Renderer::CreateLayerPipeline() {
     }
     gpu::PipelineLayoutDesc layout_info;
     layout_info.sets = {layer_set_layout_};
-    layout_info.push_bytes = 80;
+    layout_info.push_bytes = 128;
     layout_info.push_stages = gpu::ShaderStage::Fragment;
     layer_layout_ = gpu_->CreatePipelineLayout(layout_info);
     if (!layer_layout_) {
@@ -593,6 +592,7 @@ bool Renderer::BeginFrame(bool present) {
     streamline::BeginFrame();
     cpu_waits_.sleep_ms = wait_ms(std::chrono::steady_clock::now() - sleep_started).count();
     grain[0] = 0.0f;
+    grain[3] = 0.0f;
     if (targets_missing_ && !swapchain_dirty_) {
         if (std::chrono::steady_clock::now() < targets_retry_at_) {
             return false;
@@ -732,12 +732,6 @@ bool Renderer::BeginFrame(bool present) {
     const gpu::Rect2D area{{0, 0}, RenderExtent()};
     cmd.BeginRendering(area, {&color, 1});
     cmd.EndPass();
-    cmd.Barrier(ColorBarrier(hdr_boost_.image, PipelineStage::AllCommands, 0, Layout::Undefined, PipelineStage::ColorAttachmentOutput,
-                             gpu::Bits(gpu::Access::ColorAttachmentWrite), Layout::ColorAttachment));
-    color.view = hdr_boost_.view;
-    color.clear_value = {{0.0f, 0.0f, 0.0f, 0.0f}};
-    cmd.BeginRendering(area, {&color, 1});
-    cmd.EndPass();
     streamline::SetMarker(streamline::Marker::SimulationEnd);
     streamline::SetMarker(streamline::Marker::RenderSubmitStart);
     return true;
@@ -764,15 +758,17 @@ void Renderer::RecordTopUi(gpu::CommandList& cmd, gpu::Extent2D extent, bool dra
     ui_top_dirty_ = draw;
 }
 
-void Renderer::CompositePush(float (&out)[20], float mode, gpu::Extent2D extent, bool with_top_ui, bool grain_off) const {
-    const float brightness = plain_output ? 1.0f : std::clamp(brightness_override_ > 0.0f ? brightness_override_ : output_brightness, 0.1f, 4.0f);
+void Renderer::CompositePush(float (&out)[32], float mode, gpu::Extent2D extent, bool with_top_ui, bool grain_off) const {
+    const float brightness = plain_output || output_mode_ != RendererOutputMode::Sdr ? 1.0f : std::clamp(brightness_override_ > 0.0f ? brightness_override_ : output_brightness, 0.1f, 4.0f);
     const float across = extent.height ? (static_cast<float>(extent.width) / static_cast<float>(extent.height)) / (16.0f / 9.0f) : 1.0f;
     const bool hdr_output = output_mode_ != RendererOutputMode::Sdr;
-    const float push[20] = {exposure, brightness, mode, static_cast<float>(photo_filter), fade[0], fade[1], fade[2], fade[3],
-                            plain_output || grain_off ? 0.0f : grain[0], grain[1], grain[2], grain[3], grain_offset[0], grain_offset[1], across,
-                            static_cast<float>(output_mode_), ctx_.hdr_paper_nits, HdrPeak(),
+    const float push[32] = {static_cast<float>(hdr_sdr_eotf_), brightness, mode, static_cast<float>(photo_filter), fade[0], fade[1], fade[2], fade[3],
+                            plain_output || grain_off ? 0.0f : grain[0], grain[1], grain[2], plain_output ? 0.0f : grain[3], grain_offset[0], grain_offset[1], across,
+                            static_cast<float>(output_mode_), HdrPaperWhite(), HdrPeak(),
                             hdr_output && !plain_output ? 1.0f : 0.0f, with_top_ui ? 1.0f : 0.0f};
     std::copy(std::begin(push), std::end(push), std::begin(out));
+    const auto grade = hdr_color.Push(hdr_output && !plain_output);
+    std::copy(grade.begin(), grade.end(), out + 20);
 }
 
 void Renderer::Composite(gpu::CommandList& cmd, gpu::BindingSetHandle set, float mode, gpu::Extent2D extent, gpu::Format target_format,
@@ -781,7 +777,7 @@ void Renderer::Composite(gpu::CommandList& cmd, gpu::BindingSetHandle set, float
     const gpu::PipelineHandle pipeline = target_format == final_format_ ? final_composite_pipeline_ : composite_pipeline_;
     cmd.BindPipeline(gpu::BindPoint::Graphics, pipeline);
     cmd.BindSets(gpu::BindPoint::Graphics, composite_layout_, 0, {&set, 1});
-    float push[20];
+    float push[32];
     CompositePush(push, mode, extent, with_top_ui, grain_off);
     cmd.PushConstants(composite_layout_, gpu::ShaderStage::Fragment, 0, sizeof(push), push);
     cmd.Draw(3, 1, 0, 0);
@@ -803,8 +799,6 @@ void Renderer::EndFrame(bool draw_ui) {
     list.Barrier(ColorBarrier(scene_color_.image, PipelineStage::ColorAttachmentOutput | PipelineStage::ComputeShader,
                               Access::ColorAttachmentWrite | Access::ShaderStorageWrite, Layout::ColorAttachment, PipelineStage::FragmentShader,
                               gpu::Bits(Access::ShaderSampledRead), Layout::ShaderReadOnly));
-    list.Barrier(ColorBarrier(hdr_boost_.image, PipelineStage::ColorAttachmentOutput, gpu::Bits(Access::ColorAttachmentWrite),
-                              Layout::ColorAttachment, PipelineStage::FragmentShader, gpu::Bits(Access::ShaderSampledRead), Layout::ShaderReadOnly));
     const gpu::ImageHandle target_image = window_ ? (presenting_ ? gpu::vk::Wrap<gpu::ImageTag>(ctx_.swapchain.images[image_index_]) : gpu::ImageHandle{})
                                                   : output_.image;
     const gpu::ImageViewHandle target_view =
@@ -899,7 +893,7 @@ void Renderer::EndFrame(bool draw_ui) {
             list.SetViewport({{0, 0}, extent});
             list.BindPipeline(gpu::BindPoint::Graphics, layer_pipeline_);
             list.BindSets(gpu::BindPoint::Graphics, layer_layout_, 0, {&set, 1});
-            float push[20];
+            float push[32];
             CompositePush(push, 1.0f, extent, true, false);
             list.PushConstants(layer_layout_, gpu::ShaderStage::Fragment, 0, sizeof(push), push);
             list.Draw(3, 1, 0, 0);
@@ -1265,7 +1259,7 @@ bool Renderer::SaveScreenshot(const std::filesystem::path& path, glm::vec4 crop)
     const bool hdr_capture = format == VK_FORMAT_R16G16B16A16_SFLOAT || format == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     std::vector<float> nits_dump;
     if (hdr_capture && std::getenv("PT_HDR_DUMP")) nits_dump.resize(size_t(width) * height * 3);
-    const float paper = ctx_.hdr_paper_nits;
+    const float paper = HdrPaperWhite();
     for (uint32_t y = 0; y < height; ++y) {
         for (uint32_t x = 0; x < width; ++x) {
             const size_t src = (size_t(y) * width + x) * bytes_per_pixel;
@@ -1907,6 +1901,7 @@ bool Renderer::BeginFrameD3D12(bool present) {
     using wait_ms = std::chrono::duration<float, std::milli>;
     cpu_waits_ = CpuWaits{};
     grain[0] = 0.0f;
+    grain[3] = 0.0f;
     if (window_ && present) {
         int w = 0;
         int h = 0;
@@ -1965,12 +1960,6 @@ bool Renderer::BeginFrameD3D12(bool present) {
     const gpu::Rect2D area{{0, 0}, RenderExtent()};
     cmd.BeginRendering(area, {&color, 1});
     cmd.EndPass();
-    cmd.Barrier(ColorBarrier(hdr_boost_.image, PipelineStage::AllCommands, 0, Layout::Undefined, PipelineStage::ColorAttachmentOutput,
-                             gpu::Bits(gpu::Access::ColorAttachmentWrite), Layout::ColorAttachment));
-    color.view = hdr_boost_.view;
-    color.clear_value = {{0.0f, 0.0f, 0.0f, 0.0f}};
-    cmd.BeginRendering(area, {&color, 1});
-    cmd.EndPass();
     return true;
 }
 
@@ -1984,8 +1973,6 @@ void Renderer::EndFrameD3D12(bool draw_ui) {
     list.Barrier(ColorBarrier(scene_color_.image, PipelineStage::ColorAttachmentOutput | PipelineStage::ComputeShader,
                               Access::ColorAttachmentWrite | Access::ShaderStorageWrite, Layout::ColorAttachment, PipelineStage::FragmentShader,
                               gpu::Bits(Access::ShaderSampledRead), Layout::ShaderReadOnly));
-    list.Barrier(ColorBarrier(hdr_boost_.image, PipelineStage::ColorAttachmentOutput, gpu::Bits(Access::ColorAttachmentWrite),
-                              Layout::ColorAttachment, PipelineStage::FragmentShader, gpu::Bits(Access::ShaderSampledRead), Layout::ShaderReadOnly));
     const gpu::Extent2D extent = RenderExtent();
     const bool xr = std::exchange(xr_pending_, false);
     static const bool ui_over_grain = [] {
@@ -2058,7 +2045,7 @@ void Renderer::EndFrameD3D12(bool draw_ui) {
             list.SetViewport({{0, 0}, extent});
             list.BindPipeline(gpu::BindPoint::Graphics, layer_pipeline_);
             list.BindSets(gpu::BindPoint::Graphics, layer_layout_, 0, {&set, 1});
-            float push[20];
+            float push[32];
             CompositePush(push, 1.0f, extent, true, false);
             list.PushConstants(layer_layout_, gpu::ShaderStage::Fragment, 0, sizeof(push), push);
             list.Draw(3, 1, 0, 0);

@@ -1,5 +1,6 @@
 #version 460
 #include "common.glsl"
+#include "post_filter.glsl"
 
 layout(push_constant) uniform PassPush {
     uvec4 ids;
@@ -25,9 +26,10 @@ vec3 SampleScreen(uint source, vec2 uv) {
         float r7 = pow(r3, 1.75);
         vec2 offset = r7 * 84.0 * texel * p * r6;
         vec2 base = uv * 0.9 + 0.050000012;
-        color.r = Img(source, SMP_LINEAR_CLAMP, clamp(base + offset * 1.42, 0.0, 1.0)).r;
-        color.g = Img(source, SMP_LINEAR_CLAMP, clamp(base + offset * 1.275, 0.0, 1.0)).g;
-        color.b = Img(source, SMP_LINEAR_CLAMP, clamp(base + offset * 1.12, 0.0, 1.0)).b;
+        color.r = PostLinearSample(source, clamp(base + offset * 1.42, 0.0, 1.0)).r;
+        color.g = PostLinearSample(source, clamp(base + offset * 1.275, 0.0, 1.0)).g;
+        color.b = PostLinearSample(source, clamp(base + offset * 1.12, 0.0, 1.0)).b;
+        color = PostEncode(color);
     } else {
         color = ImgFetch(source, clamp(ivec2(uv*ImgSize(source)), ivec2(0), ivec2(ImgSize(source))-1)).rgb;
     }
@@ -45,7 +47,7 @@ void main() {
         vec3 d=SampleScreen(source,in_uv+vec2(0,texel.y));
         vec3 lo=min(color,min(min(a,b),min(c,d))), mx=max(color,max(max(a,b),max(c,d)));
         vec3 sharpened=color+(color-(a+b+c+d)*.25)*pass.f1.x;
-        color=clamp(sharpened,max(vec3(0),lo-(mx-lo)*.1),min(vec3(1),mx+(mx-lo)*.1));
+        color=clamp(sharpened,max(vec3(0),lo-(mx-lo)*.1),(frame.hdr_output.x > 0.5 ? mx+(mx-lo)*.1 : min(vec3(1),mx+(mx-lo)*.1)));
     }
     if(pass.f1.y<=0.0) {
         out_color=vec4(color,1.0);
@@ -54,5 +56,6 @@ void main() {
     vec3 seed = fract(vec3(gl_FragCoord.xyx) * vec3(0.1031, 0.1030, 0.0973));
     seed += dot(seed, seed.yxz + 33.33);
     float noise = fract((seed.x + seed.y) * seed.z) - 0.5;
-    out_color = vec4(clamp(color + noise / 255.0, 0.0, 1.0), 1.0);
+    color += noise / 255.0;
+    out_color = vec4(frame.hdr_output.x > 0.5 ? max(color, vec3(0.0)) : clamp(color, 0.0, 1.0), 1.0);
 }
